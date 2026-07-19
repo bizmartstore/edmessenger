@@ -7,6 +7,8 @@ import {
   logoutOneSignal,
 } from "@/lib/onesignal";
 
+const RELOAD_ONCE_KEY = "edmessenger.onesignal.reloadOnce.v4";
+
 /**
  * The ONLY push notification bootstrap in the app.
  * - Inits OneSignal once
@@ -32,8 +34,31 @@ export function PushNotifications() {
       await identifyOneSignalUser(user.id, isAdmin ? "admin" : "student");
       if (cancelled) return;
 
-      // Auto-ask for notifications as soon as the app opens (no bell click)
-      await ensurePushSubscription();
+      const ok = await ensurePushSubscription();
+      if (cancelled) return;
+
+      // Permission granted but token empty → SW was broken. Reload once after reset.
+      if (
+        !ok &&
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted"
+      ) {
+        try {
+          if (localStorage.getItem(RELOAD_ONCE_KEY) !== "1") {
+            localStorage.setItem(RELOAD_ONCE_KEY, "1");
+            window.location.reload();
+            return;
+          }
+        } catch {
+          /* ignore */
+        }
+      } else if (ok) {
+        try {
+          localStorage.removeItem(RELOAD_ONCE_KEY);
+        } catch {
+          /* ignore */
+        }
+      }
     })();
 
     return () => {

@@ -169,12 +169,31 @@ async function handleNotify(request: Request, env: EnvBag): Promise<Response> {
   });
 }
 
+/** Always serve valid JS — never let SSR/HTML fallback claim this path. */
+function handleOneSignalServiceWorker(): Response {
+  return new Response(
+    'importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");\n',
+    {
+      status: 200,
+      headers: {
+        "content-type": "application/javascript; charset=utf-8",
+        "service-worker-allowed": "/",
+        "cache-control": "no-cache, no-store, must-revalidate",
+      },
+    },
+  );
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
       const url = new URL(request.url);
       const envBag = (env ?? {}) as EnvBag;
 
+      // Must be before SSR — a HTML body here breaks push (empty token / no active SW).
+      if (url.pathname === "/OneSignalSDKWorker.js") {
+        return handleOneSignalServiceWorker();
+      }
       if (url.pathname === "/api/keepalive" || url.pathname === "/cdn-cgi/keepalive") {
         return handleKeepAlive();
       }
