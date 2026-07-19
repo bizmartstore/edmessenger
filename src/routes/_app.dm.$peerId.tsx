@@ -15,7 +15,6 @@ import {
   setDmCache,
   type DmMsg,
 } from "@/lib/chat-cache";
-import { sendPush } from "@/lib/onesignal";
 import { useUnreadBadges } from "@/hooks/useUnreadBadges";
 
 export const Route = createFileRoute("/_app/dm/$peerId")({
@@ -24,7 +23,7 @@ export const Route = createFileRoute("/_app/dm/$peerId")({
 
 function DMPage() {
   const { peerId } = Route.useParams();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const { markRead } = useUnreadBadges();
   const [peer, setPeer] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
   const [msgs, setMsgs] = useState<DmMsg[]>(() => getDmCache(peerId));
@@ -93,13 +92,6 @@ function DMPage() {
     if (error) throw error;
     if (data) setMsgs([...appendDmCache(peerId, data as DmMsg)]);
     void supabase.rpc("prune_dm_thread", { peer: peerId });
-    void sendPush({
-      title: profile?.full_name ? `DM from ${profile.full_name}` : "New direct message",
-      message: text.slice(0, 80) || "Sent an attachment",
-      url: `/dm/${user.id}`,
-      audience: "users",
-      userIds: [peerId],
-    });
   }
 
   return (

@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { AttachmentList } from "@/components/AttachmentList";
 import type { UploadedFile } from "@/lib/upload";
-import { sendPush } from "@/lib/onesignal";
 
 export const Route = createFileRoute("/admin/activities")({
   component: AdminActivities,
@@ -70,12 +69,6 @@ function AdminActivities() {
       setDue("");
       toast.success("Activity created");
       await load();
-      void sendPush({
-        title: "New activity",
-        message: title.trim().slice(0, 80),
-        url: "/activities",
-        audience: "students",
-      });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed");
     } finally {

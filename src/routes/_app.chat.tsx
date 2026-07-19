@@ -16,7 +16,6 @@ import {
   type ClassMsg,
 } from "@/lib/chat-cache";
 import { getCachedProfile, rememberProfile, rememberProfiles } from "@/lib/profile-cache";
-import { sendPush } from "@/lib/onesignal";
 import { UnreadBadge, useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { useLiveReload } from "@/hooks/useLiveReload";
 
@@ -181,12 +180,6 @@ function ChatPage() {
       setMessages([...next]);
     }
     void supabase.rpc("prune_classroom_messages");
-    void sendPush({
-      title: "New classroom message",
-      message: `${profile?.full_name ?? "Someone"}: ${text.slice(0, 60) || "Sent an attachment"}`,
-      url: "/chat",
-      audience: "all",
-    });
   }
 
   return (

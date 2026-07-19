@@ -5,7 +5,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { Megaphone, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
-import { sendPush } from "@/lib/onesignal";
 
 export const Route = createFileRoute("/admin/announcements")({
   component: AdminAnnouncements,
@@ -54,12 +53,6 @@ function AdminAnnouncements() {
       setBody("");
       toast.success("Announcement posted");
       await load();
-      void sendPush({
-        title: "New announcement",
-        message: title.trim().slice(0, 80),
-        url: "/",
-        audience: "students",
-      });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed");
     } finally {

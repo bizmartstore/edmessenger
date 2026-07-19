@@ -14,7 +14,7 @@ interface Q { id: string; question: string; options: string[]; correct_index: nu
 
 function TakeQuiz() {
   const { id } = Route.useParams();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [questions, setQuestions] = useState<Q[]>([]);
@@ -47,13 +47,6 @@ function TakeQuiz() {
     if (error) { toast.error(error.message); return; }
     setSubmitted({ score, total: questions.length });
     toast.success(`You scored ${score}/${questions.length}!`);
-    const { sendPush } = await import("@/lib/onesignal");
-    void sendPush({
-      title: "Quiz submitted",
-      message: `${profile?.full_name ?? "A student"} scored ${score}/${questions.length} on ${quiz?.title ?? "a quiz"}`,
-      url: "/admin/quizzes",
-      audience: "admins",
-    });
   }
 
   if (!quiz) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;

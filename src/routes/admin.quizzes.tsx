@@ -41,15 +41,6 @@ function AdminQuizzes() {
     const next = !q.published;
     await supabase.from("quizzes").update({ published: next }).eq("id", q.id);
     load();
-    if (next) {
-      const { sendPush } = await import("@/lib/onesignal");
-      void sendPush({
-        title: "New quiz available",
-        message: q.title,
-        url: "/quizzes",
-        audience: "students",
-      });
-    }
   }
 
   async function deleteQuiz(id: string) {

@@ -1,4 +1,4 @@
--- Announcements, activities, admin emails, push-related helpers
+-- Announcements, activities, admin emails
 -- Run in Supabase SQL Editor
 
 -- Fix primary admin emails (both spellings)

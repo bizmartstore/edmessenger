@@ -8,9 +8,24 @@ type ServerEntry = {
 };
 
 type EnvBag = {
-  ONESIGNAL_REST_API_KEY?: string;
-  ONESIGNAL_APP_ID?: string;
+  ASSETS?: { fetch: (request: Request) => Promise<Response> };
 };
+
+type CloudflareGlobal = typeof globalThis & { __env__?: EnvBag };
+
+/**
+ * Nitro's Cloudflare preset sets globalThis.__env__, then calls the SSR
+ * entry as `fetch(request)` only — so the `env` arg is often undefined.
+ * Always merge both so Worker bindings remain visible.
+ */
+function resolveEnv(env: unknown): EnvBag {
+  const arg = env && typeof env === "object" ? (env as EnvBag) : {};
+  const fromNitro = (globalThis as CloudflareGlobal).__env__;
+  return {
+    ...fromNitro,
+    ...arg,
+  };
+}
 
 let serverEntryPromise: Promise<ServerEntry> | undefined;
 
@@ -49,7 +64,6 @@ function isH3SwallowedErrorBody(body: string): boolean {
 
 const SUPABASE_URL = "https://ijxoffbsedvcqbqeohju.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_efDdsdHfnNGJVgvyxAlCKw_eZRxjE2p";
-const ONESIGNAL_APP_ID = "718bec75-70f7-4936-bdff-5dd26e8c835d";
 
 async function handleKeepAlive(): Promise<Response> {
   const started = Date.now();
@@ -83,137 +97,18 @@ async function handleKeepAlive(): Promise<Response> {
   );
 }
 
-type NotifyBody = {
-  title?: string;
-  message?: string;
-  url?: string;
-  origin?: string;
-  audience?: "students" | "admins" | "users" | "all";
-  userIds?: string[];
-  excludeUserIds?: string[];
-};
-
-async function handleNotify(request: Request, env: EnvBag): Promise<Response> {
-  if (request.method !== "POST") {
-    return new Response(JSON.stringify({ error: "POST only" }), { status: 405 });
-  }
-
-  const restKey = (env.ONESIGNAL_REST_API_KEY ?? "").trim();
-  if (!restKey) {
-    console.error("[notify] ONESIGNAL_REST_API_KEY is not set — pushes are skipped");
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        skipped: true,
-        reason: "Set ONESIGNAL_REST_API_KEY as a Cloudflare Worker secret to send pushes.",
-      }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    );
-  }
-
-  let body: NotifyBody;
-  try {
-    body = (await request.json()) as NotifyBody;
-  } catch {
-    return new Response(JSON.stringify({ error: "invalid json" }), { status: 400 });
-  }
-
-  const title = (body.title ?? "EdMessenger").slice(0, 80);
-  const message = (body.message ?? "").slice(0, 160);
-  const reqOrigin = body.origin || new URL(request.url).origin;
-  let launchUrl = body.url ?? `${reqOrigin}/`;
-  if (launchUrl.startsWith("/")) launchUrl = `${reqOrigin}${launchUrl}`;
-  const iconUrl = `${reqOrigin}/logo-pwa.png`;
-  const appId = env.ONESIGNAL_APP_ID ?? ONESIGNAL_APP_ID;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const payload: Record<string, any> = {
-    app_id: appId,
-    headings: { en: title },
-    contents: { en: message || title },
-    url: launchUrl,
-    web_url: launchUrl,
-    target_channel: "push",
-    chrome_web_icon: iconUrl,
-    firefox_icon: iconUrl,
-    chrome_web_badge: iconUrl,
-  };
-
-  if (body.audience === "users" && body.userIds?.length) {
-    const ids = body.userIds.filter((id) => !body.excludeUserIds?.includes(id));
-    if (ids.length === 0) {
-      return new Response(JSON.stringify({ ok: true, skipped: true, reason: "no recipients after exclude" }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    }
-    payload.include_aliases = { external_id: ids };
-  } else if (body.audience === "admins") {
-    payload.filters = [{ field: "tag", key: "role", relation: "=", value: "admin" }];
-  } else if (body.audience === "all") {
-    // Students OR admins (classroom chat, etc.)
-    payload.filters = [
-      { field: "tag", key: "role", relation: "=", value: "student" },
-      { operator: "OR" },
-      { field: "tag", key: "role", relation: "=", value: "admin" },
-    ];
-  } else {
-    // Default: students (announcements, quizzes, activities, lessons)
-    payload.filters = [{ field: "tag", key: "role", relation: "=", value: "student" }];
-  }
-
-  const res = await fetch("https://api.onesignal.com/notifications", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      Authorization: `Key ${restKey}`,
-    },
-    body: JSON.stringify(payload),
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    console.error("[notify] OneSignal error", res.status, text.slice(0, 500));
-  }
-  return new Response(text, {
-    status: res.status,
-    headers: { "content-type": "application/json; charset=utf-8" },
-  });
-}
-
-/** Always serve valid JS — never let SSR/HTML fallback claim this path. */
-function handleOneSignalServiceWorker(): Response {
-  return new Response(
-    'importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");\n',
-    {
-      status: 200,
-      headers: {
-        "content-type": "application/javascript; charset=utf-8",
-        "service-worker-allowed": "/",
-        "cache-control": "no-cache, no-store, must-revalidate",
-      },
-    },
-  );
-}
-
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
       const url = new URL(request.url);
-      const envBag = (env ?? {}) as EnvBag;
+      const envBag = resolveEnv(env);
 
-      // Must be before SSR — a HTML body here breaks push (empty token / no active SW).
-      if (url.pathname === "/OneSignalSDKWorker.js") {
-        return handleOneSignalServiceWorker();
-      }
       if (url.pathname === "/api/keepalive" || url.pathname === "/cdn-cgi/keepalive") {
         return handleKeepAlive();
       }
-      if (url.pathname === "/api/notify") {
-        return handleNotify(request, envBag);
-      }
 
       const handler = await getServerEntry();
-      const response = await handler.fetch(request, env, ctx);
+      const response = await handler.fetch(request, env ?? envBag, ctx);
       return await normalizeCatastrophicSsrResponse(response);
     } catch (error) {
       console.error(error);

@@ -7,7 +7,6 @@ import { uploadToBucket, humanSize, type UploadedFile } from "@/lib/upload";
 import { AttachmentList } from "@/components/AttachmentList";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { sendPush } from "@/lib/onesignal";
 
 export const Route = createFileRoute("/_app/activities/$id")({
   component: ActivityDetail,
@@ -29,7 +28,7 @@ interface Submission {
 
 function ActivityDetail() {
   const { id } = Route.useParams();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [activity, setActivity] = useState<Activity | null>(null);
   const [sub, setSub] = useState<Submission | null>(null);
   const [note, setNote] = useState("");
@@ -86,12 +85,6 @@ function ActivityDetail() {
       if (error) throw error;
       setSub(data as Submission);
       toast.success("Submitted");
-      void sendPush({
-        title: "Activity submission",
-        message: `${profile?.full_name ?? "A student"} submitted: ${activity?.title ?? "activity"}`,
-        url: "/admin/activities",
-        audience: "admins",
-      });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Submit failed");
     } finally {
