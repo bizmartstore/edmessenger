@@ -10,3 +10,6 @@ crons = ["*/5 * * * *"]
 directory = ".output/public"
 binding = "ASSETS"
 run_worker_first = ["/api/*"]
+
+[vars]
+ONESIGNAL_APP_ID = "718bec75-70f7-4936-bdff-5dd26e8c835d"

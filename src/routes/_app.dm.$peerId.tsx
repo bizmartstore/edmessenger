@@ -16,6 +16,7 @@ import {
   type DmMsg,
 } from "@/lib/chat-cache";
 import { useUnreadBadges } from "@/hooks/useUnreadBadges";
+import { notifyUsers } from "@/lib/push";
 
 export const Route = createFileRoute("/_app/dm/$peerId")({
   component: DMPage,
@@ -23,7 +24,7 @@ export const Route = createFileRoute("/_app/dm/$peerId")({
 
 function DMPage() {
   const { peerId } = Route.useParams();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { markRead } = useUnreadBadges();
   const [peer, setPeer] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
   const [msgs, setMsgs] = useState<DmMsg[]>(() => getDmCache(peerId));
@@ -90,7 +91,11 @@ function DMPage() {
       .select("id, sender_id, recipient_id, content, attachments, created_at")
       .single();
     if (error) throw error;
-    if (data) setMsgs([...appendDmCache(peerId, data as DmMsg)]);
+    if (data) {
+      setMsgs([...appendDmCache(peerId, data as DmMsg)]);
+      const preview = text.trim() || (attachments.length ? "Sent an attachment" : "New message");
+      notifyUsers([peerId], profile?.full_name ?? "New message", preview, `/dm/${user.id}`);
+    }
     void supabase.rpc("prune_dm_thread", { peer: peerId });
   }
 

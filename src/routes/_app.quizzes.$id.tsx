@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { ArrowLeft, CheckCircle2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { notifyRole } from "@/lib/push";
 
 export const Route = createFileRoute("/_app/quizzes/$id")({
   component: TakeQuiz,
@@ -14,7 +15,7 @@ interface Q { id: string; question: string; options: string[]; correct_index: nu
 
 function TakeQuiz() {
   const { id } = Route.useParams();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [questions, setQuestions] = useState<Q[]>([]);
@@ -45,6 +46,8 @@ function TakeQuiz() {
       score,
     }, { onConflict: "quiz_id,user_id" });
     if (error) { toast.error(error.message); return; }
+    const name = profile?.full_name ?? "A student";
+    notifyRole("admin", "Quiz submitted", `${name} submitted ${quiz?.title ?? "a quiz"}`, "/admin/quizzes");
     setSubmitted({ score, total: questions.length });
     toast.success(`You scored ${score}/${questions.length}!`);
   }

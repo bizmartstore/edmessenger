@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Megaphone, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { notifyRole } from "@/lib/push";
 import { formatDistanceToNow } from "date-fns";
 
 export const Route = createFileRoute("/admin/announcements")({
@@ -48,6 +49,7 @@ function AdminAnnouncements() {
         created_by: user?.id ?? null,
       });
       if (error) throw error;
+      notifyRole("student", title.trim(), body.trim() || "New announcement", "/");
       void supabase.rpc("prune_announcements");
       setTitle("");
       setBody("");

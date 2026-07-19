@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { uploadToBucket, humanSize, type UploadedFile } from "@/lib/upload";
 import { AttachmentList } from "@/components/AttachmentList";
 import { toast } from "sonner";
+import { notifyRole } from "@/lib/push";
 import { format } from "date-fns";
 
 export const Route = createFileRoute("/_app/activities/$id")({
@@ -28,7 +29,7 @@ interface Submission {
 
 function ActivityDetail() {
   const { id } = Route.useParams();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [activity, setActivity] = useState<Activity | null>(null);
   const [sub, setSub] = useState<Submission | null>(null);
   const [note, setNote] = useState("");
@@ -84,6 +85,8 @@ function ActivityDetail() {
         .single();
       if (error) throw error;
       setSub(data as Submission);
+      const name = profile?.full_name ?? "A student";
+      notifyRole("admin", "Activity submitted", `${name} submitted ${activity?.title ?? "an activity"}`, "/admin/activities");
       toast.success("Submitted");
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Submit failed");
