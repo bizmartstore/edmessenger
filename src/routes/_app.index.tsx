@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/useAuth";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   MessageCircle,
@@ -15,6 +15,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { BannerCarousel } from "@/components/BannerCarousel";
 import { UnreadBadge, useUnreadBadges } from "@/hooks/useUnreadBadges";
+import { useLiveReload } from "@/hooks/useLiveReload";
 
 export const Route = createFileRoute("/_app/")({
   component: Home,
@@ -34,22 +35,36 @@ function Home() {
   const [stats, setStats] = useState({ lessons: 0, quizzes: 0, activities: 0 });
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
-  useEffect(() => {
-    (async () => {
-      const [l, q, a, anns] = await Promise.all([
-        supabase.from("lessons").select("id", { count: "exact", head: true }),
-        supabase.from("quizzes").select("id", { count: "exact", head: true }).eq("published", true),
-        supabase.from("activities").select("id", { count: "exact", head: true }),
-        supabase.from("announcements").select("id, title, body, created_at").order("created_at", { ascending: false }).limit(5),
-      ]);
-      setStats({
-        lessons: l.count ?? 0,
-        quizzes: q.count ?? 0,
-        activities: a.error ? 0 : (a.count ?? 0),
-      });
-      if (!anns.error) setAnnouncements((anns.data ?? []) as Announcement[]);
-    })();
+  const loadHome = useCallback(async () => {
+    const [l, q, a, anns] = await Promise.all([
+      supabase.from("lessons").select("id", { count: "exact", head: true }),
+      supabase.from("quizzes").select("id", { count: "exact", head: true }).eq("published", true),
+      supabase.from("activities").select("id", { count: "exact", head: true }),
+      supabase.from("announcements").select("id, title, body, created_at").order("created_at", { ascending: false }).limit(5),
+    ]);
+    setStats({
+      lessons: l.count ?? 0,
+      quizzes: q.count ?? 0,
+      activities: a.error ? 0 : (a.count ?? 0),
+    });
+    if (!anns.error) setAnnouncements((anns.data ?? []) as Announcement[]);
   }, []);
+
+  useEffect(() => {
+    void loadHome();
+  }, [loadHome]);
+
+  useLiveReload(
+    "home-live",
+    [
+      { table: "announcements", event: "INSERT" },
+      { table: "lessons", event: "INSERT" },
+      { table: "activities", event: "INSERT" },
+      { table: "quizzes", event: "*" },
+    ],
+    loadHome,
+    { debounceMs: 800 },
+  );
 
   useEffect(() => {
     const t = window.setTimeout(() => void markRead("announcements"), 2000);

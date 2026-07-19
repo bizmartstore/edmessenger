@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -33,9 +33,13 @@ interface UnreadCtx {
 
 const Ctx = createContext<UnreadCtx | null>(null);
 
+/** Debounce window so chat bursts don't spam get_unread_counts RPC. */
+const REFRESH_DEBOUNCE_MS = 2500;
+
 export function UnreadBadgesProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [counts, setCounts] = useState<UnreadCounts>(EMPTY);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refresh = useCallback(async () => {
     if (!user) {
@@ -59,35 +63,56 @@ export function UnreadBadgesProvider({ children }: { children: ReactNode }) {
     });
   }, [user]);
 
+  const scheduleRefresh = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      void refresh();
+    }, REFRESH_DEBOUNCE_MS);
+  }, [refresh]);
+
   const markRead = useCallback(
     async (section: UnreadSection) => {
       if (!user) return;
       await supabase.rpc("mark_section_read", { sec: section });
+      // Immediate for the section the user just opened
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
       await refresh();
     },
-    [user, refresh]
+    [user, refresh],
   );
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  // Soft realtime: refresh when relevant tables change
+  // Realtime signals only — debounced RPC (not per-message REST)
   useEffect(() => {
     if (!user) return;
     const ch = supabase
       .channel(`unread-${user.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => void refresh())
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages" }, () => void refresh())
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "activities" }, () => void refresh())
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "lessons" }, () => void refresh())
-      .on("postgres_changes", { event: "*", schema: "public", table: "quizzes" }, () => void refresh())
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "announcements" }, () => void refresh())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, scheduleRefresh)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages" }, scheduleRefresh)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "activities" }, scheduleRefresh)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "lessons" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "quizzes" }, scheduleRefresh)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "announcements" }, scheduleRefresh)
       .subscribe();
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") scheduleRefresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      document.removeEventListener("visibilitychange", onVisible);
       supabase.removeChannel(ch);
     };
-  }, [user, refresh]);
+  }, [user, scheduleRefresh]);
 
   return <Ctx.Provider value={{ counts, refresh, markRead }}>{children}</Ctx.Provider>;
 }
@@ -105,7 +130,7 @@ export function UnreadBadge({ count, className = "" }: { count: number; classNam
     <span
       className={cn(
         "absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold grid place-items-center leading-none shadow z-10",
-        className
+        className,
       )}
     >
       {count > 9 ? "9+" : count}

@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useUnreadBadges } from "@/hooks/useUnreadBadges";
+import { useLiveReload } from "@/hooks/useLiveReload";
 import { ClipboardList, CheckCircle2, ArrowRight } from "lucide-react";
 
 export const Route = createFileRoute("/_app/quizzes")({
@@ -28,22 +29,32 @@ function QuizzesList() {
     void markRead("quizzes");
   }, [markRead]);
 
-  useEffect(() => {
+  const loadQuizzes = useCallback(async () => {
     if (!user) return;
-    (async () => {
-      const { data: qs } = await supabase.from("quizzes").select("*").eq("published", true).order("created_at", { ascending: false });
-      const list = (qs ?? []) as Quiz[];
-      const ids = list.map((q) => q.id);
-      if (ids.length === 0) { setQuizzes([]); return; }
-      const { data: counts } = await supabase.from("quiz_questions").select("quiz_id").in("quiz_id", ids);
-      const { data: attempts } = await supabase.from("quiz_attempts").select("quiz_id, score").in("quiz_id", ids).eq("user_id", user.id);
-      const countMap = new Map<string, number>();
-      (counts ?? []).forEach((c: { quiz_id: string }) => countMap.set(c.quiz_id, (countMap.get(c.quiz_id) ?? 0) + 1));
-      const attMap = new Map<string, number | null>();
-      (attempts ?? []).forEach((a: { quiz_id: string; score: number | null }) => attMap.set(a.quiz_id, a.score));
-      setQuizzes(list.map((q) => ({ ...q, question_count: countMap.get(q.id) ?? 0, attempted: attMap.has(q.id), score: attMap.get(q.id) ?? null })));
-    })();
+    const { data: qs } = await supabase.from("quizzes").select("*").eq("published", true).order("created_at", { ascending: false });
+    const list = (qs ?? []) as Quiz[];
+    const ids = list.map((q) => q.id);
+    if (ids.length === 0) {
+      setQuizzes([]);
+      return;
+    }
+    const { data: counts } = await supabase.from("quiz_questions").select("quiz_id").in("quiz_id", ids);
+    const { data: attempts } = await supabase.from("quiz_attempts").select("quiz_id, score").in("quiz_id", ids).eq("user_id", user.id);
+    const countMap = new Map<string, number>();
+    (counts ?? []).forEach((c: { quiz_id: string }) => countMap.set(c.quiz_id, (countMap.get(c.quiz_id) ?? 0) + 1));
+    const attMap = new Map<string, number | null>();
+    (attempts ?? []).forEach((a: { quiz_id: string; score: number | null }) => attMap.set(a.quiz_id, a.score));
+    setQuizzes(list.map((q) => ({ ...q, question_count: countMap.get(q.id) ?? 0, attempted: attMap.has(q.id), score: attMap.get(q.id) ?? null })));
   }, [user]);
+
+  useEffect(() => {
+    void loadQuizzes();
+  }, [loadQuizzes]);
+
+  useLiveReload("quizzes-live", [{ table: "quizzes", event: "*" }], loadQuizzes, {
+    enabled: Boolean(user),
+    debounceMs: 800,
+  });
 
   return (
     <div className="max-w-md mx-auto px-5 pt-6">

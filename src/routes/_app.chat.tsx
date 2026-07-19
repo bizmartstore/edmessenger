@@ -15,8 +15,10 @@ import {
   setClassroomCache,
   type ClassMsg,
 } from "@/lib/chat-cache";
+import { getCachedProfile, rememberProfile, rememberProfiles } from "@/lib/profile-cache";
 import { sendPush } from "@/lib/onesignal";
 import { UnreadBadge, useUnreadBadges } from "@/hooks/useUnreadBadges";
+import { useLiveReload } from "@/hooks/useLiveReload";
 
 export const Route = createFileRoute("/_app/chat")({
   component: ChatPage,
@@ -46,6 +48,7 @@ async function loadClassroomMessages(): Promise<ClassMsg[]> {
     .from("profiles")
     .select("id, full_name, avatar_url")
     .in("id", ids);
+  rememberProfiles((profiles ?? []) as { id: string; full_name: string | null; avatar_url: string | null }[]);
   const map = new Map((profiles ?? []).map((p) => [p.id, p]));
   return rows.map((r) => ({
     ...r,
@@ -53,6 +56,14 @@ async function loadClassroomMessages(): Promise<ClassMsg[]> {
       ? { full_name: map.get(r.user_id)!.full_name, avatar_url: map.get(r.user_id)!.avatar_url }
       : null,
   }));
+}
+
+async function resolveClassProfile(userId: string): Promise<ClassMsg["profiles"]> {
+  const cached = getCachedProfile(userId);
+  if (cached) return cached;
+  const { data: p } = await supabase.from("profiles").select("full_name, avatar_url").eq("id", userId).maybeSingle();
+  if (p) rememberProfile(userId, p);
+  return (p as ClassMsg["profiles"]) ?? null;
 }
 
 function ChatPage() {
@@ -83,6 +94,12 @@ function ChatPage() {
     }
   }, []);
 
+  const refreshDms = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase.rpc("list_dm_previews");
+    setDms((data ?? []) as DMPreview[]);
+  }, [user]);
+
   // Load classroom once on mount + keep realtime for life of page (both tabs)
   useEffect(() => {
     void refreshClassroom();
@@ -90,8 +107,8 @@ function ChatPage() {
       .channel("classroom-chat")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async (payload) => {
         const row = payload.new as ClassMsg;
-        const { data: p } = await supabase.from("profiles").select("full_name, avatar_url").eq("id", row.user_id).maybeSingle();
-        const next = appendClassroomCache({ ...row, profiles: p as ClassMsg["profiles"] });
+        const p = await resolveClassProfile(row.user_id);
+        const next = appendClassroomCache({ ...row, profiles: p });
         setMessages([...next]);
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, (payload) => {
@@ -106,11 +123,16 @@ function ChatPage() {
 
   useEffect(() => {
     if (tab !== "dms" || !user) return;
-    (async () => {
-      const { data } = await supabase.rpc("list_dm_previews");
-      setDms((data ?? []) as DMPreview[]);
-    })();
-  }, [tab, user]);
+    void refreshDms();
+  }, [tab, user, refreshDms]);
+
+  // Live DM inbox — Realtime signal, debounced RPC (no polling)
+  useLiveReload(
+    "dm-inbox-live",
+    [{ table: "direct_messages", event: "INSERT" }],
+    refreshDms,
+    { enabled: tab === "dms" && Boolean(user), debounceMs: 500 },
+  );
 
   useEffect(() => {
     if (tab === "class") bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -148,6 +170,10 @@ function ChatPage() {
       .single();
     if (error) throw error;
     if (data) {
+      rememberProfile(user.id, {
+        full_name: profile?.full_name ?? null,
+        avatar_url: profile?.avatar_url ?? null,
+      });
       const next = appendClassroomCache({
         ...(data as ClassMsg),
         profiles: { full_name: profile?.full_name ?? null, avatar_url: profile?.avatar_url ?? null },

@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useUnreadBadges } from "@/hooks/useUnreadBadges";
+import { useLiveReload } from "@/hooks/useLiveReload";
 import { FolderKanban, ChevronRight, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -28,17 +29,24 @@ function ActivitiesPage() {
     void markRead("activities");
   }, [markRead]);
 
-  useEffect(() => {
+  const loadActivities = useCallback(async () => {
     if (!user) return;
-    (async () => {
-      const [{ data }, { data: subs }] = await Promise.all([
-        supabase.from("activities").select("id, title, description, due_at, created_at").order("created_at", { ascending: false }).limit(50),
-        supabase.from("activity_submissions").select("activity_id").eq("user_id", user.id),
-      ]);
-      setItems((data ?? []) as Activity[]);
-      setSubmitted(new Set((subs ?? []).map((s: { activity_id: string }) => s.activity_id)));
-    })();
+    const [{ data }, { data: subs }] = await Promise.all([
+      supabase.from("activities").select("id, title, description, due_at, created_at").order("created_at", { ascending: false }).limit(50),
+      supabase.from("activity_submissions").select("activity_id").eq("user_id", user.id),
+    ]);
+    setItems((data ?? []) as Activity[]);
+    setSubmitted(new Set((subs ?? []).map((s: { activity_id: string }) => s.activity_id)));
   }, [user]);
+
+  useEffect(() => {
+    void loadActivities();
+  }, [loadActivities]);
+
+  useLiveReload("activities-live", [{ table: "activities", event: "INSERT" }], loadActivities, {
+    enabled: Boolean(user),
+    debounceMs: 800,
+  });
 
   return (
     <div className="max-w-md mx-auto px-5 pt-6 pb-4">

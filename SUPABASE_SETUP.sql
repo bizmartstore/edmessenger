@@ -430,6 +430,9 @@ grant execute on function public.admin_mark_attendance(uuid, date) to authentica
 -- 10) REALTIME publication
 alter publication supabase_realtime add table public.messages;
 alter publication supabase_realtime add table public.direct_messages;
+alter publication supabase_realtime add table public.lessons;
+alter publication supabase_realtime add table public.quizzes;
+-- announcements + activities: see SUPABASE_MIGRATION_REALTIME_CONTENT.sql (created in announce migration)
 
 -- 11) STORAGE BUCKETS (public)
 insert into storage.buckets (id, name, public) values ('chat-files', 'chat-files', true)

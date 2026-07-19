@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { BookOpen, Download, Eye, FileText } from "lucide-react";
 import { humanSize } from "@/lib/upload";
 import { formatDistanceToNow } from "date-fns";
 import { useUnreadBadges } from "@/hooks/useUnreadBadges";
+import { useLiveReload } from "@/hooks/useLiveReload";
 
 export const Route = createFileRoute("/_app/lessons")({
   component: LessonsPage,
@@ -29,13 +30,19 @@ function LessonsPage() {
     void markRead("lessons");
   }, [markRead]);
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from("lessons").select("*").order("created_at", { ascending: false });
-      setLessons((data ?? []) as Lesson[]);
-      setLoading(false);
-    })();
+  const loadLessons = useCallback(async () => {
+    const { data } = await supabase.from("lessons").select("*").order("created_at", { ascending: false });
+    setLessons((data ?? []) as Lesson[]);
+    setLoading(false);
   }, []);
+
+  useEffect(() => {
+    void loadLessons();
+  }, [loadLessons]);
+
+  useLiveReload("lessons-live", [{ table: "lessons", event: "INSERT" }], loadLessons, {
+    debounceMs: 800,
+  });
 
   return (
     <div className="max-w-md mx-auto px-5 pt-6">
