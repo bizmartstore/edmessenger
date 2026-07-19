@@ -41,7 +41,7 @@ export function AdminFooter() {
           className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
         >
           <Shield className="h-3 w-3" />
-          {isAdmin ? "Admin dashboard" : "EduChat • Educator access"}
+          {isAdmin ? "Admin dashboard" : "EdMessenger • Educator access"}
         </button>
       </footer>
 

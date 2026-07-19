@@ -1,13 +1,14 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { GraduationCap, MessageCircle, Sparkles, BookOpen } from "lucide-react";
+import { MessageCircle, Sparkles, BookOpen } from "lucide-react";
 import { toast } from "sonner";
+import logoAsset from "@/assets/edmessenger_logo.png.asset.json";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Sign in — EduChat" },
+      { title: "Sign in — EdMessenger" },
       { name: "description", content: "Sign in with Google to join your classroom." },
     ],
   }),
@@ -37,14 +38,28 @@ function AuthPage() {
   return (
     <div className="min-h-screen flex flex-col safe-top">
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 max-w-md mx-auto w-full">
-        <div className="w-20 h-20 rounded-3xl gradient-hero shadow-glow grid place-items-center mb-6 animate-pop">
-          <GraduationCap className="h-10 w-10 text-white" strokeWidth={2.2} />
-        </div>
+        <img
+          src={logoAsset.url}
+          alt="EdMessenger"
+          className="w-24 h-24 rounded-3xl shadow-glow mb-6 animate-pop object-cover"
+        />
         <h1 className="text-4xl font-extrabold tracking-tight text-center animate-fade-up">
-          Welcome to <span className="bg-clip-text text-transparent gradient-primary">EduChat</span>
+          Welcome to{" "}
+          <span
+            className="text-primary"
+            style={{
+              backgroundImage: "var(--gradient-primary)",
+              WebkitBackgroundClip: "text",
+              backgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              color: "transparent",
+            }}
+          >
+            EdMessenger
+          </span>
         </h1>
         <p className="mt-3 text-center text-muted-foreground text-sm leading-relaxed animate-fade-up">
-          Your mobile classroom for chatting with classmates, sharing lessons,<br/>and staying on track.
+          Learn. Communicate. Succeed.<br/>Your mobile classroom for chat, lessons, and quizzes.
         </p>
 
         <div className="grid grid-cols-3 gap-3 w-full mt-8 animate-fade-up">
