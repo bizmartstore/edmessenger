@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
+import { Route as AppChatRouteImport } from './routes/_app.chat'
+import { Route as AppDmPeerIdRouteImport } from './routes/_app.dm.$peerId'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -27,27 +29,49 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppChatRoute = AppChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDmPeerIdRoute = AppDmPeerIdRouteImport.update({
+  id: '/dm/$peerId',
+  path: '/dm/$peerId',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/auth': typeof AuthRoute
+  '/chat': typeof AppChatRoute
+  '/dm/$peerId': typeof AppDmPeerIdRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
+  '/chat': typeof AppChatRoute
   '/': typeof AppIndexRoute
+  '/dm/$peerId': typeof AppDmPeerIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/auth': typeof AuthRoute
+  '/_app/chat': typeof AppChatRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/dm/$peerId': typeof AppDmPeerIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth'
+  fullPaths: '/' | '/auth' | '/chat' | '/dm/$peerId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/auth' | '/'
-  id: '__root__' | '/_app' | '/auth' | '/_app/'
+  to: '/auth' | '/chat' | '/' | '/dm/$peerId'
+  id:
+    | '__root__'
+    | '/_app'
+    | '/auth'
+    | '/_app/chat'
+    | '/_app/'
+    | '/_app/dm/$peerId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -78,15 +102,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/chat': {
+      id: '/_app/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof AppChatRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/dm/$peerId': {
+      id: '/_app/dm/$peerId'
+      path: '/dm/$peerId'
+      fullPath: '/dm/$peerId'
+      preLoaderRoute: typeof AppDmPeerIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
 interface AppRouteChildren {
+  AppChatRoute: typeof AppChatRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppDmPeerIdRoute: typeof AppDmPeerIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppChatRoute: AppChatRoute,
   AppIndexRoute: AppIndexRoute,
+  AppDmPeerIdRoute: AppDmPeerIdRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
