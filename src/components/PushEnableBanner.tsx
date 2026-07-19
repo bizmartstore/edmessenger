@@ -10,8 +10,8 @@ import {
 const DISMISS_KEY = "edmessenger.pushBanner.dismissed";
 
 /**
- * Mobile browsers often block auto permission prompts.
- * This banner needs a tap (user gesture) to finish enabling push.
+ * The ONLY in-app "Enable notifications" UI.
+ * Tap → browser Allow dialog (no OneSignal Slidedown duplicate).
  */
 export function PushEnableBanner() {
   const { user, isAdmin, loading } = useAuth();
@@ -69,6 +69,11 @@ export function PushEnableBanner() {
                   const ok = await ensurePushSubscription({ forcePrompt: true });
                   if (ok) {
                     await bindPushIdentity(user.id, isAdmin ? "admin" : "student");
+                    try {
+                      localStorage.removeItem(DISMISS_KEY);
+                    } catch {
+                      /* ignore */
+                    }
                     setShow(false);
                   }
                 } finally {

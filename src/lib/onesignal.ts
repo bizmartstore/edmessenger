@@ -104,22 +104,11 @@ export function initOneSignal(): Promise<void> {
         serviceWorkerPath: "OneSignalSDKWorker.js",
         serviceWorkerParam: { scope: "/" },
         notifyButton: { enable: false },
-        // Avoid showNotification before the SW is active
         welcomeNotification: { disable: true },
+        // No OneSignal Slidedown / bell — the app shows a single Enable banner.
         promptOptions: {
           slidedown: {
-            prompts: [
-              {
-                type: "push",
-                autoPrompt: false,
-                text: {
-                  actionMessage:
-                    "Allow notifications to get class updates, messages, quizzes, and activities.",
-                  acceptButton: "Allow",
-                  cancelButton: "Later",
-                },
-              },
-            ],
+            prompts: [],
           },
         },
       });
@@ -197,8 +186,8 @@ async function optInAndVerify(): Promise<boolean> {
 }
 
 /**
- * Show the allow-notifications prompt as soon as the app opens.
- * Uses OneSignal Slidedown (then browser Allow), then opts in the subscription.
+ * Quiet path: if the browser already allowed notifications, opt in the subscription.
+ * Never shows a prompt UI — that is only PushEnableBanner (one tap → native Allow).
  */
 export async function ensurePushSubscription(opts?: { forcePrompt?: boolean }): Promise<boolean> {
   await initOneSignal();
@@ -208,12 +197,10 @@ export async function ensurePushSubscription(opts?: { forcePrompt?: boolean }): 
       return false;
     }
 
-    // Already allowed — ensure we have a real push token
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       const ok = await optInAndVerify();
       if (ok) return true;
 
-      // Token still empty: wipe SWs once and ask user to reload
       console.warn("[onesignal] permission granted but no push token — resetting service workers");
       await unregisterAllServiceWorkers();
       try {
@@ -224,14 +211,15 @@ export async function ensurePushSubscription(opts?: { forcePrompt?: boolean }): 
       return false;
     }
 
-    if (promptStarted && !opts?.forcePrompt) return pushSubscriptionReady();
+    // Not granted yet — only prompt when the user taps our single banner
+    if (!opts?.forcePrompt) return false;
     promptStarted = true;
 
     try {
-      await OneSignal.Slidedown.promptPush();
+      await OneSignal.Notifications.requestPermission();
     } catch {
       try {
-        await OneSignal.Notifications.requestPermission();
+        if (typeof Notification !== "undefined") await Notification.requestPermission();
       } catch {
         /* ignore */
       }

@@ -11,10 +11,8 @@ import {
 const RELOAD_ONCE_KEY = "edmessenger.onesignal.reloadOnce.v4";
 
 /**
- * The ONLY push notification bootstrap in the app.
- * - Inits OneSignal once
- * - Tags the signed-in user (student/admin)
- * - Automatically shows the Allow-notifications prompt on open
+ * Background bootstrap only — no prompt UI.
+ * The single "Enable notifications" UI lives in PushEnableBanner.
  */
 export function PushNotifications() {
   const { user, isAdmin, session, loading } = useAuth();
@@ -36,10 +34,10 @@ export function PushNotifications() {
       await identifyOneSignalUser(user.id, role);
       if (cancelled) return;
 
+      // Silent only: never open a second prompt (banner owns that)
       const ok = await ensurePushSubscription();
       if (cancelled) return;
 
-      // Link subscription → external_id + role tag (needed for DM / admin targeting)
       if (ok) {
         await bindPushIdentity(user.id, role);
         try {
@@ -50,7 +48,6 @@ export function PushNotifications() {
         return;
       }
 
-      // Permission granted but token empty → SW was broken. Reload once after reset.
       if (typeof Notification !== "undefined" && Notification.permission === "granted") {
         try {
           if (localStorage.getItem(RELOAD_ONCE_KEY) !== "1") {
