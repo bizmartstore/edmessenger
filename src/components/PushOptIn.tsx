@@ -12,7 +12,7 @@ import { toast } from "sonner";
 
 /**
  * Boots OneSignal for every signed-in user (student OR admin).
- * Must run on admin pages too so admins receive DMs / submission pushes when the app is closed.
+ * Does NOT call optIn automatically — that requires an active SW + user gesture.
  */
 export function PushBootstrap() {
   const { user, isAdmin, session } = useAuth();
@@ -24,10 +24,6 @@ export function PushBootstrap() {
       if (cancelled) return;
       if (user) {
         await identifyOneSignalUser(user.id, isAdmin ? "admin" : "student");
-        // Re-opt-in if permission already granted (keeps subscription alive after SW updates)
-        if (await isPushEnabled()) {
-          /* identifyOneSignalUser already optIns */
-        }
       } else {
         await logoutOneSignal();
       }
@@ -40,11 +36,12 @@ export function PushBootstrap() {
   return null;
 }
 
-/** Bell button — enable browser push (required once for closed-app delivery). */
+/** Bell button — tap once to allow notifications (needed for closed-app push). */
 export function PushOptIn({ className }: { className?: string }) {
   const { user, isAdmin, session } = useAuth();
   const [enabled, setEnabled] = useState(false);
   const [ready, setReady] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,24 +65,35 @@ export function PushOptIn({ className }: { className?: string }) {
   if (!user || !ready) return null;
 
   async function toggle() {
+    if (busy) return;
     if (enabled) {
       toast.message("Notifications are on. To turn off, use your browser site settings.");
       return;
     }
-    const ok = await requestPushPermission();
-    if (user) {
-      await identifyOneSignalUser(user.id, isAdmin ? "admin" : "student");
+    setBusy(true);
+    try {
+      const ok = await requestPushPermission();
+      if (user) {
+        await identifyOneSignalUser(user.id, isAdmin ? "admin" : "student");
+      }
+      setEnabled(ok);
+      if (ok) toast.success("Push on — alerts work even when the app is closed");
+      else {
+        toast.error(
+          "Could not enable push. Allow notifications, then hard-refresh (Ctrl+Shift+R) and try the bell again."
+        );
+      }
+    } finally {
+      setBusy(false);
     }
-    setEnabled(ok);
-    if (ok) toast.success("Push on — you'll get alerts even when the app is closed");
-    else toast.error("Permission denied — enable notifications in your browser settings");
   }
 
   return (
     <button
       type="button"
       onClick={toggle}
-      className={className ?? "p-2.5 rounded-xl bg-muted hover:bg-secondary transition-colors"}
+      disabled={busy}
+      className={className ?? "p-2.5 rounded-xl bg-muted hover:bg-secondary transition-colors disabled:opacity-60"}
       title={enabled ? "Notifications on" : "Enable push notifications"}
     >
       {enabled ? <Bell className="h-4 w-4 text-primary" /> : <BellOff className="h-4 w-4 text-muted-foreground" />}

@@ -132,7 +132,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!session) return;
     const ping = () => {
       fetch("/api/keepalive", { cache: "no-store" }).catch(() => {});
-      navigator.serviceWorker?.controller?.postMessage({ type: "KEEPALIVE" });
     };
     ping();
     const id = window.setInterval(ping, 4 * 60 * 1000);
