@@ -157,9 +157,9 @@ function ChatPage() {
     void supabase.rpc("prune_classroom_messages");
     void sendPush({
       title: "New classroom message",
-      message: text.slice(0, 80) || "Sent an attachment",
+      message: `${profile?.full_name ?? "Someone"}: ${text.slice(0, 60) || "Sent an attachment"}`,
       url: "/chat",
-      audience: "all",
+      audience: "students",
     });
   }
 

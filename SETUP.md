@@ -13,24 +13,27 @@ Primary admin emails (auto-admin, Student/Admin toggle):
 - `sheethappenswithjaa@gmail.com`
 - `sheethappenwithjaa@gmail.com`
 
-## OneSignal push
+## OneSignal push (required for closed-app alerts)
 
 App ID: `718bec75-70f7-4936-bdff-5dd26e8c835d`
 
-1. In OneSignal dashboard, set your site URL to the Cloudflare Worker URL
-2. Upload / confirm web push certificates
-3. Add Cloudflare Worker secret **`ONESIGNAL_REST_API_KEY`** (Keys & IDs → REST API Key) so `/api/notify` can send pushes
-4. In the app, tap the bell icon on Home to enable notifications
+1. In OneSignal dashboard → Settings → Platforms → **Web** — site URL must match your live Cloudflare Worker URL (https)
+2. Upload / confirm web push certificates (VAPID is usually automatic)
+3. **Required:** set Cloudflare Worker secret  
+   `wrangler secret put ONESIGNAL_REST_API_KEY`  
+   (OneSignal → Settings → Keys & IDs → REST API Key). Without this secret, `/api/notify` skips sending and nobody gets pushes when the app is closed.
+4. In the app, tap the **bell** once (Home or Admin header) and allow notifications. Do this on **admin devices too** so admins get DMs / submissions while the app is closed.
+5. After allowing, keep the PWA/browser permission ON. Closed-app delivery uses the browser push service + OneSignal service worker (`/OneSignalSDKWorker.js`).
 
 ### Who gets notified
 
 | Event | Audience |
 |--------|----------|
-| Announcement | Students |
-| New quiz / activity / lesson | Students |
-| Classroom chat | Everyone |
-| Direct message | Recipient (incl. admin) |
+| Announcement, new quiz, activity, lesson | Students |
+| Classroom chat | Students |
+| Direct message | Recipient only (student or admin) |
 | Quiz / activity submitted | Admins |
+| New student signed in | Admins |
 
 ## PWA
 

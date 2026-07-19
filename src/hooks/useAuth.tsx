@@ -58,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const { data: existing } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
     let p = existing as Profile | null;
+    let justCreated = false;
     if (!p) {
       const { data: inserted } = await supabase.from("profiles").upsert({
         id: user.id,
@@ -66,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         avatar_url: (user.user_metadata?.avatar_url as string) ?? null,
       }).select().single();
       p = inserted as Profile | null;
+      justCreated = true;
     }
     setProfile(p);
 
@@ -80,9 +82,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq("user_id", user.id)
       .eq("role", "admin")
       .maybeSingle();
-    setIsAdmin(Boolean(role) || isPrimaryAdminEmail(user.email));
-    // If primary admin email, always treat as admin for UI even before RPC succeeds
+    const admin = Boolean(role) || isPrimaryAdminEmail(user.email);
+    setIsAdmin(admin);
     if (isPrimaryAdminEmail(user.email)) setIsAdmin(true);
+
+    // Notify admins once when a new student joins (even if profile was created by SQL trigger)
+    if (!admin && !isPrimaryAdminEmail(user.email) && typeof window !== "undefined") {
+      const notifyKey = `edmessenger.signupPush.${user.id}`;
+      const createdAt = p?.created_at ? new Date(p.created_at).getTime() : 0;
+      const isFresh = justCreated || (createdAt > 0 && Date.now() - createdAt < 5 * 60 * 1000);
+      if (isFresh && !localStorage.getItem(notifyKey)) {
+        localStorage.setItem(notifyKey, "1");
+        const { sendPush } = await import("@/lib/onesignal");
+        void sendPush({
+          title: "New student signed in",
+          message: `${p?.full_name ?? user.email ?? "A student"} joined EdMessenger`,
+          url: "/admin/students",
+          audience: "admins",
+        });
+      }
+    }
   }, []);
 
   const refresh = useCallback(async () => {

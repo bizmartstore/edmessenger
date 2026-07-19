@@ -87,8 +87,10 @@ type NotifyBody = {
   title?: string;
   message?: string;
   url?: string;
-  audience?: "all" | "students" | "admins" | "users";
+  origin?: string;
+  audience?: "students" | "admins" | "users";
   userIds?: string[];
+  excludeUserIds?: string[];
 };
 
 async function handleNotify(request: Request, env: EnvBag): Promise<Response> {
@@ -96,7 +98,7 @@ async function handleNotify(request: Request, env: EnvBag): Promise<Response> {
     return new Response(JSON.stringify({ error: "POST only" }), { status: 405 });
   }
 
-  const restKey = env.ONESIGNAL_REST_API_KEY ?? "";
+  const restKey = (env.ONESIGNAL_REST_API_KEY ?? "").trim();
   if (!restKey) {
     return new Response(
       JSON.stringify({
@@ -117,7 +119,10 @@ async function handleNotify(request: Request, env: EnvBag): Promise<Response> {
 
   const title = (body.title ?? "EdMessenger").slice(0, 80);
   const message = (body.message ?? "").slice(0, 160);
-  const url = body.url ?? "/";
+  const reqOrigin = body.origin || new URL(request.url).origin;
+  let launchUrl = body.url ?? `${reqOrigin}/`;
+  if (launchUrl.startsWith("/")) launchUrl = `${reqOrigin}${launchUrl}`;
+  const iconUrl = `${reqOrigin}/logo-pwa.png`;
   const appId = env.ONESIGNAL_APP_ID ?? ONESIGNAL_APP_ID;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -125,20 +130,28 @@ async function handleNotify(request: Request, env: EnvBag): Promise<Response> {
     app_id: appId,
     headings: { en: title },
     contents: { en: message || title },
-    url,
-    chrome_web_icon: "/logo-pwa.png",
-    firefox_icon: "/logo-pwa.png",
+    url: launchUrl,
+    web_url: launchUrl,
+    target_channel: "push",
+    chrome_web_icon: iconUrl,
+    firefox_icon: iconUrl,
+    chrome_web_badge: iconUrl,
   };
 
   if (body.audience === "users" && body.userIds?.length) {
-    payload.include_aliases = { external_id: body.userIds };
-    payload.target_channel = "push";
+    const ids = body.userIds.filter((id) => !body.excludeUserIds?.includes(id));
+    if (ids.length === 0) {
+      return new Response(JSON.stringify({ ok: true, skipped: true, reason: "no recipients after exclude" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    payload.include_aliases = { external_id: ids };
   } else if (body.audience === "admins") {
     payload.filters = [{ field: "tag", key: "role", relation: "=", value: "admin" }];
-  } else if (body.audience === "students") {
-    payload.filters = [{ field: "tag", key: "role", relation: "=", value: "student" }];
   } else {
-    payload.included_segments = ["All"];
+    // Default: students (announcements, classroom, quizzes, activities, lessons)
+    payload.filters = [{ field: "tag", key: "role", relation: "=", value: "student" }];
   }
 
   const res = await fetch("https://api.onesignal.com/notifications", {
