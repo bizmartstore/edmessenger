@@ -3,7 +3,6 @@ import { useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { BottomNav } from "@/components/BottomNav";
 import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
-import { PushBootstrap } from "@/components/PushOptIn";
 import { UnreadBadgesProvider } from "@/hooks/useUnreadBadges";
 
 export const Route = createFileRoute("/_app")({
@@ -29,7 +28,6 @@ function AppLayout() {
 
   return (
     <UnreadBadgesProvider>
-      <PushBootstrap />
       <div className="min-h-screen flex flex-col safe-top">
         <main className="flex-1 pb-24 animate-fade-up">
           <Outlet />

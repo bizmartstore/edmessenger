@@ -10,6 +10,7 @@ import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
 import { AuthProvider } from "@/hooks/useAuth";
+import { PushNotifications } from "@/components/PushNotifications";
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
@@ -80,6 +81,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <PushNotifications />
         <Outlet />
         <Toaster position="top-center" richColors closeButton />
       </AuthProvider>

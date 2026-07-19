@@ -13,7 +13,6 @@ import {
   FolderKanban,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { PushOptIn } from "@/components/PushOptIn";
 import { BannerCarousel } from "@/components/BannerCarousel";
 import { UnreadBadge, useUnreadBadges } from "@/hooks/useUnreadBadges";
 
@@ -113,7 +112,6 @@ function Home() {
           <div className="font-bold truncate">{first}</div>
           <div className="text-[10px] text-primary font-medium">View account →</div>
         </Link>
-        <PushOptIn />
         {(canToggleAdmin || isAdmin) && (
           <button
             type="button"

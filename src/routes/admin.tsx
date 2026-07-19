@@ -3,7 +3,6 @@ import { useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { LayoutDashboard, ClipboardList, BookOpen, CalendarCheck, Users, ArrowLeft, UserRound, Megaphone, FolderKanban, Images } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { PushBootstrap, PushOptIn } from "@/components/PushOptIn";
 
 export const Route = createFileRoute("/admin")({
   ssr: false,
@@ -38,7 +37,6 @@ function AdminLayout() {
 
   return (
     <div className="min-h-screen safe-top">
-      <PushBootstrap />
       <header className="sticky top-0 z-20 bg-background/85 backdrop-blur-lg border-b border-border">
         <div className="max-w-3xl mx-auto flex items-center gap-3 px-4 py-3">
           <Link to="/" className="p-2 -ml-2 rounded-xl hover:bg-muted"><ArrowLeft className="h-4 w-4" /></Link>
@@ -47,7 +45,6 @@ function AdminLayout() {
             <div className="font-bold text-sm">Admin</div>
             <div className="text-[10px] text-muted-foreground">Educator dashboard</div>
           </div>
-          <PushOptIn />
           {canToggleAdmin && (
             <button
               type="button"
