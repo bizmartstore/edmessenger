@@ -2,10 +2,13 @@ name = "edmessenger"
 compatibility_date = "2024-12-01"
 main = ".output/server/index.mjs"
 
-# Keep the Worker + Supabase project warm (free-tier pause prevention)
+# Keep the Worker + Supabase project warm
 [triggers]
 crons = ["*/5 * * * *"]
 
 [assets]
 directory = ".output/public"
 binding = "ASSETS"
+
+# Set via: wrangler secret put ONESIGNAL_REST_API_KEY
+# Optional: wrangler secret put ONESIGNAL_APP_ID
