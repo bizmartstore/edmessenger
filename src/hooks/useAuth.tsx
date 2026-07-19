@@ -78,6 +78,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq("role", "admin")
       .maybeSingle();
     setIsAdmin(Boolean(role) || isPrimaryAdminEmail(user.email));
+    // If primary admin email, always treat as admin for UI even before RPC succeeds
+    if (isPrimaryAdminEmail(user.email)) setIsAdmin(true);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -122,8 +124,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsAdmin(false);
   }, []);
 
-  const canToggleAdmin = isAdmin && isPrimaryAdminEmail(session?.user?.email);
-  const actingAsAdmin = isAdmin && (!canToggleAdmin || viewMode === "admin");
+  const canToggleAdmin = isPrimaryAdminEmail(session?.user?.email);
+  const effectiveIsAdmin = isAdmin || canToggleAdmin;
+  const actingAsAdmin = effectiveIsAdmin && (!canToggleAdmin || viewMode === "admin");
 
   return (
     <AuthCtx.Provider
@@ -131,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         user: session?.user ?? null,
         profile,
-        isAdmin,
+        isAdmin: effectiveIsAdmin,
         viewMode,
         actingAsAdmin,
         canToggleAdmin,

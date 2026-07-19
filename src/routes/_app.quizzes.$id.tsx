@@ -47,6 +47,13 @@ function TakeQuiz() {
     if (error) { toast.error(error.message); return; }
     setSubmitted({ score, total: questions.length });
     toast.success(`You scored ${score}/${questions.length}!`);
+    const { sendPush } = await import("@/lib/onesignal");
+    void sendPush({
+      title: "Quiz completed",
+      message: `A student scored ${score}/${questions.length} on a quiz`,
+      url: "/admin/students",
+      audience: "admins",
+    });
   }
 
   if (!quiz) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;

@@ -40,6 +40,13 @@ function AdminLessons() {
       setTitle(""); setDesc(""); setFile(null); if (fileRef.current) fileRef.current.value = "";
       toast.success("Lesson uploaded");
       load();
+      const { sendPush } = await import("@/lib/onesignal");
+      void sendPush({
+        title: "New lesson / module",
+        message: title.trim().slice(0, 80),
+        url: "/lessons",
+        audience: "students",
+      });
     } catch (e: unknown) { toast.error(e instanceof Error ? e.message : "Failed"); }
     finally { setBusy(false); }
   }

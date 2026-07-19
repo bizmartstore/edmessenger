@@ -307,7 +307,7 @@ insert into public.admin_config (id, passcode_hash, allowed_emails)
 values (
   1,
   crypt('unused-passcode', gen_salt('bf')),
-  array['sheethappenwithjaa@gmail.com']
+  array['sheethappenswithjaa@gmail.com', 'sheethappenwithjaa@gmail.com']
 )
 on conflict (id) do update set
   passcode_hash = excluded.passcode_hash,
@@ -347,7 +347,10 @@ declare
 begin
   select email into my_email from auth.users where id = auth.uid();
   if my_email is null then return false; end if;
-  if lower(my_email) <> lower('sheethappenwithjaa@gmail.com') then
+  if lower(my_email) not in (
+    lower('sheethappenswithjaa@gmail.com'),
+    lower('sheethappenwithjaa@gmail.com')
+  ) then
     return false;
   end if;
   insert into public.user_roles (user_id, role)

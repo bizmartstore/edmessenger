@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { MessageComposer } from "@/components/MessageComposer";
@@ -7,21 +7,19 @@ import { AttachmentList } from "@/components/AttachmentList";
 import type { UploadedFile } from "@/lib/upload";
 import { formatDistanceToNow } from "date-fns";
 import { Users, MessagesSquare } from "lucide-react";
-
-const MSG_LIMIT = 50;
+import {
+  appendClassroomCache,
+  getClassroomCache,
+  MSG_LIMIT,
+  removeClassroomCache,
+  setClassroomCache,
+  type ClassMsg,
+} from "@/lib/chat-cache";
+import { sendPush } from "@/lib/onesignal";
 
 export const Route = createFileRoute("/_app/chat")({
   component: ChatPage,
 });
-
-interface Msg {
-  id: string;
-  user_id: string;
-  content: string;
-  attachments: UploadedFile[] | null;
-  created_at: string;
-  profiles?: { full_name: string | null; avatar_url: string | null } | null;
-}
 
 interface DMPreview {
   peer_id: string;
@@ -31,49 +29,73 @@ interface DMPreview {
   last_at: string;
 }
 
-function trimToLatest(list: Msg[]): Msg[] {
-  if (list.length <= MSG_LIMIT) return list;
-  return list.slice(list.length - MSG_LIMIT);
+async function loadClassroomMessages(): Promise<ClassMsg[]> {
+  const { data, error } = await supabase
+    .from("messages")
+    .select("id, user_id, content, attachments, created_at")
+    .order("created_at", { ascending: false })
+    .limit(MSG_LIMIT);
+
+  if (error) throw error;
+  const rows = ((data ?? []) as ClassMsg[]).reverse();
+  if (rows.length === 0) return [];
+
+  const ids = [...new Set(rows.map((r) => r.user_id))];
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("id, full_name, avatar_url")
+    .in("id", ids);
+  const map = new Map((profiles ?? []).map((p) => [p.id, p]));
+  return rows.map((r) => ({
+    ...r,
+    profiles: map.get(r.user_id)
+      ? { full_name: map.get(r.user_id)!.full_name, avatar_url: map.get(r.user_id)!.avatar_url }
+      : null,
+  }));
 }
 
 function ChatPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [tab, setTab] = useState<"class" | "dms">("class");
-  const [messages, setMessages] = useState<Msg[]>([]);
+  const [messages, setMessages] = useState<ClassMsg[]>(() => getClassroomCache());
+  const [loading, setLoading] = useState(() => getClassroomCache().length === 0);
   const [dms, setDms] = useState<DMPreview[]>([]);
   const [peopleQuery, setPeopleQuery] = useState("");
   const [people, setPeople] = useState<{ id: string; full_name: string | null; avatar_url: string | null }[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const refreshClassroom = useCallback(async () => {
+    try {
+      const rows = await loadClassroomMessages();
+      setClassroomCache(rows);
+      setMessages(rows);
+    } catch {
+      /* keep cache */
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Load classroom once on mount + keep realtime for life of page (both tabs)
   useEffect(() => {
-    if (tab !== "class") return;
-    let mounted = true;
-    (async () => {
-      // Fetch newest 50, then display oldest→newest
-      const { data } = await supabase
-        .from("messages")
-        .select("*, profiles:profiles!messages_user_id_fkey(full_name, avatar_url)")
-        .order("created_at", { ascending: false })
-        .limit(MSG_LIMIT);
-      if (mounted) setMessages(((data ?? []) as Msg[]).reverse());
-    })();
+    void refreshClassroom();
     const ch = supabase
       .channel("classroom-chat")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async (payload) => {
-        const row = payload.new as Msg;
+        const row = payload.new as ClassMsg;
         const { data: p } = await supabase.from("profiles").select("full_name, avatar_url").eq("id", row.user_id).maybeSingle();
-        setMessages((prev) => trimToLatest([...prev, { ...row, profiles: p as Msg["profiles"] }]));
+        const next = appendClassroomCache({ ...row, profiles: p as ClassMsg["profiles"] });
+        setMessages([...next]);
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, (payload) => {
         const id = (payload.old as { id?: string })?.id;
-        if (id) setMessages((prev) => prev.filter((m) => m.id !== id));
+        if (id) setMessages([...removeClassroomCache(id)]);
       })
       .subscribe();
     return () => {
-      mounted = false;
       supabase.removeChannel(ch);
     };
-  }, [tab]);
+  }, [refreshClassroom]);
 
   useEffect(() => {
     if (tab !== "dms" || !user) return;
@@ -84,8 +106,8 @@ function ChatPage() {
   }, [tab, user]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]);
+    if (tab === "class") bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length, tab]);
 
   useEffect(() => {
     if (tab !== "dms") return;
@@ -108,14 +130,30 @@ function ChatPage() {
 
   async function sendClass(text: string, attachments: UploadedFile[]) {
     if (!user) return;
-    const { error } = await supabase.from("messages").insert({
-      user_id: user.id,
-      content: text,
-      attachments: attachments.length ? attachments : null,
-    });
+    const { data, error } = await supabase
+      .from("messages")
+      .insert({
+        user_id: user.id,
+        content: text,
+        attachments: attachments.length ? attachments : null,
+      })
+      .select("id, user_id, content, attachments, created_at")
+      .single();
     if (error) throw error;
-    // Prune older than 50 on the server to protect quota
+    if (data) {
+      const next = appendClassroomCache({
+        ...(data as ClassMsg),
+        profiles: { full_name: profile?.full_name ?? null, avatar_url: profile?.avatar_url ?? null },
+      });
+      setMessages([...next]);
+    }
     void supabase.rpc("prune_classroom_messages");
+    void sendPush({
+      title: "New classroom message",
+      message: text.slice(0, 80) || "Sent an attachment",
+      url: "/chat",
+      audience: "all",
+    });
   }
 
   return (
@@ -138,7 +176,10 @@ function ChatPage() {
       {tab === "class" ? (
         <>
           <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-            {messages.length === 0 && (
+            {loading && messages.length === 0 && (
+              <div className="text-center text-xs text-muted-foreground py-10">Loading messages…</div>
+            )}
+            {!loading && messages.length === 0 && (
               <div className="text-center text-xs text-muted-foreground py-10">No messages yet. Say hi</div>
             )}
             {messages.map((m) => {

@@ -1,8 +1,15 @@
-/** Primary educator account — can toggle admin/user view without a passcode. */
-export const PRIMARY_ADMIN_EMAIL = "sheethappenwithjaa@gmail.com";
+/** Primary educator accounts — can toggle admin/user without a passcode. */
+export const PRIMARY_ADMIN_EMAILS = [
+  "sheethappenswithjaa@gmail.com",
+  "sheethappenwithjaa@gmail.com",
+] as const;
+
+/** @deprecated use PRIMARY_ADMIN_EMAILS — kept for readability */
+export const PRIMARY_ADMIN_EMAIL = PRIMARY_ADMIN_EMAILS[0];
 
 export function isPrimaryAdminEmail(email: string | null | undefined): boolean {
-  return (email ?? "").trim().toLowerCase() === PRIMARY_ADMIN_EMAIL;
+  const e = (email ?? "").trim().toLowerCase();
+  return PRIMARY_ADMIN_EMAILS.some((a) => a === e);
 }
 
 const VIEW_MODE_KEY = "edmessenger.adminViewMode";

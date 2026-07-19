@@ -2,24 +2,50 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/useAuth";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { MessageCircle, BookOpen, ClipboardList, LogOut, Sparkles, Shield, UserRound } from "lucide-react";
+import {
+  MessageCircle,
+  BookOpen,
+  ClipboardList,
+  LogOut,
+  Shield,
+  UserRound,
+  Megaphone,
+  FolderKanban,
+} from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { PushOptIn } from "@/components/PushOptIn";
 
 export const Route = createFileRoute("/_app/")({
   component: Home,
 });
 
+interface Announcement {
+  id: string;
+  title: string;
+  body: string;
+  created_at: string;
+}
+
 function Home() {
-  const { profile, signOut, actingAsAdmin, canToggleAdmin, viewMode, setViewMode, isAdmin } = useAuth();
+  const { profile, signOut, canToggleAdmin, viewMode, setViewMode, isAdmin, actingAsAdmin } = useAuth();
   const navigate = useNavigate();
-  const [stats, setStats] = useState({ lessons: 0, quizzes: 0 });
+  const [stats, setStats] = useState({ lessons: 0, quizzes: 0, activities: 0 });
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
   useEffect(() => {
     (async () => {
-      const [l, q] = await Promise.all([
+      const [l, q, a, anns] = await Promise.all([
         supabase.from("lessons").select("id", { count: "exact", head: true }),
         supabase.from("quizzes").select("id", { count: "exact", head: true }).eq("published", true),
+        supabase.from("activities").select("id", { count: "exact", head: true }),
+        supabase.from("announcements").select("id, title, body, created_at").order("created_at", { ascending: false }).limit(5),
       ]);
-      setStats({ lessons: l.count ?? 0, quizzes: q.count ?? 0 });
+      setStats({
+        lessons: l.count ?? 0,
+        quizzes: q.count ?? 0,
+        activities: a.error ? 0 : (a.count ?? 0),
+      });
+      if (!anns.error) setAnnouncements((anns.data ?? []) as Announcement[]);
     })();
   }, []);
 
@@ -27,40 +53,34 @@ function Home() {
 
   const tiles = [
     { to: "/chat", icon: MessageCircle, label: "Classroom Chat", desc: "Say hi to your class", color: "from-violet-500 to-fuchsia-500" },
+    { to: "/activities", icon: FolderKanban, label: "Activities", desc: `${stats.activities} assigned`, color: "from-sky-400 to-blue-600" },
     { to: "/lessons", icon: BookOpen, label: "Lessons", desc: `${stats.lessons} available`, color: "from-amber-400 to-orange-500" },
     { to: "/quizzes", icon: ClipboardList, label: "Quizzes", desc: `${stats.quizzes} to take`, color: "from-emerald-400 to-teal-500" },
   ];
 
   return (
-    <div className="px-5 pt-6 max-w-md mx-auto">
+    <div className="px-5 pt-6 max-w-md mx-auto pb-4">
       <header className="flex items-center gap-3">
         <img src="/logo.png" alt="EdMessenger" className="h-12 w-12 rounded-2xl object-cover shadow-card" />
         <div className="min-w-0 flex-1">
           <div className="text-xs text-muted-foreground">Welcome back</div>
           <div className="font-bold truncate">{first}</div>
         </div>
-        {canToggleAdmin && (
+        <PushOptIn />
+        {(canToggleAdmin || isAdmin) && (
           <button
             type="button"
             onClick={() => {
-              const next = viewMode === "admin" ? "user" : "admin";
-              setViewMode(next);
-              if (next === "admin") navigate({ to: "/admin" });
+              if (canToggleAdmin) {
+                setViewMode("admin");
+              }
+              navigate({ to: "/admin" });
             }}
-            className="p-2.5 rounded-xl bg-muted hover:bg-secondary transition-colors"
-            title={viewMode === "admin" ? "Switch to student view" : "Switch to admin"}
+            className="p-2.5 rounded-xl bg-primary/10 hover:bg-primary/20 transition-colors"
+            title="Admin dashboard"
           >
-            {viewMode === "admin" ? (
-              <UserRound className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <Shield className="h-4 w-4 text-primary" />
-            )}
-          </button>
-        )}
-        {isAdmin && !canToggleAdmin && actingAsAdmin && (
-          <Link to="/admin" className="p-2.5 rounded-xl bg-muted hover:bg-secondary transition-colors" title="Admin">
             <Shield className="h-4 w-4 text-primary" />
-          </Link>
+          </button>
         )}
         <button onClick={signOut} className="p-2.5 rounded-xl bg-muted hover:bg-secondary transition-colors" title="Sign out">
           <LogOut className="h-4 w-4 text-muted-foreground" />
@@ -72,9 +92,9 @@ function Home() {
           <button
             type="button"
             onClick={() => setViewMode("user")}
-            className={`flex-1 py-2 rounded-xl transition-all ${viewMode === "user" ? "bg-card shadow-card text-foreground" : "text-muted-foreground"}`}
+            className={`flex-1 py-2 rounded-xl transition-all inline-flex items-center justify-center gap-1 ${viewMode === "user" ? "bg-card shadow-card text-foreground" : "text-muted-foreground"}`}
           >
-            Student
+            <UserRound className="h-3.5 w-3.5" /> Student
           </button>
           <button
             type="button"
@@ -82,18 +102,36 @@ function Home() {
               setViewMode("admin");
               navigate({ to: "/admin" });
             }}
-            className={`flex-1 py-2 rounded-xl transition-all ${viewMode === "admin" ? "gradient-primary text-primary-foreground shadow-glow" : "text-muted-foreground"}`}
+            className={`flex-1 py-2 rounded-xl transition-all inline-flex items-center justify-center gap-1 ${viewMode === "admin" || actingAsAdmin ? "gradient-primary text-primary-foreground shadow-glow" : "text-muted-foreground"}`}
           >
-            Admin
+            <Shield className="h-3.5 w-3.5" /> Admin
           </button>
         </div>
       )}
 
-      <div className="mt-6 rounded-3xl gradient-hero p-5 text-white shadow-glow overflow-hidden relative">
-        <Sparkles className="absolute -top-2 -right-2 h-24 w-24 text-white/10" />
-        <div className="text-xs uppercase tracking-widest opacity-80">Today</div>
-        <div className="mt-1 text-2xl font-extrabold leading-tight">Ready to learn something new?</div>
-        <div className="mt-1 text-sm opacity-90">Jump into a lesson or catch up on class chat.</div>
+      <div className="mt-5 rounded-3xl gradient-hero p-5 text-white shadow-glow overflow-hidden relative">
+        <Megaphone className="absolute -top-1 -right-1 h-20 w-20 text-white/10" />
+        <div className="text-xs uppercase tracking-widest opacity-80">Announcements</div>
+        {announcements.length === 0 ? (
+          <>
+            <div className="mt-1 text-xl font-extrabold leading-tight">No announcements yet</div>
+            <div className="mt-1 text-sm opacity-90">
+              {isAdmin ? "Post one from Admin → Announcements." : "Check back soon for updates from your teacher."}
+            </div>
+          </>
+        ) : (
+          <div className="mt-2 space-y-3">
+            {announcements.slice(0, 2).map((a) => (
+              <div key={a.id}>
+                <div className="font-extrabold text-lg leading-tight">{a.title}</div>
+                <div className="text-sm opacity-90 line-clamp-2 mt-0.5">{a.body}</div>
+                <div className="text-[10px] opacity-70 mt-1">
+                  {formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-3">

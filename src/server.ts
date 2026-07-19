@@ -7,6 +7,11 @@ type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };
 
+type EnvBag = {
+  ONESIGNAL_REST_API_KEY?: string;
+  ONESIGNAL_APP_ID?: string;
+};
+
 let serverEntryPromise: Promise<ServerEntry> | undefined;
 
 async function getServerEntry(): Promise<ServerEntry> {
@@ -44,8 +49,8 @@ function isH3SwallowedErrorBody(body: string): boolean {
 
 const SUPABASE_URL = "https://ijxoffbsedvcqbqeohju.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_efDdsdHfnNGJVgvyxAlCKw_eZRxjE2p";
+const ONESIGNAL_APP_ID = "718bec75-70f7-4936-bdff-5dd26e8c835d";
 
-/** Ping Supabase so free-tier projects stay awake; also answers Cloudflare cron. */
 async function handleKeepAlive(): Promise<Response> {
   const started = Date.now();
   let supabaseOk = false;
@@ -78,12 +83,90 @@ async function handleKeepAlive(): Promise<Response> {
   );
 }
 
+type NotifyBody = {
+  title?: string;
+  message?: string;
+  url?: string;
+  audience?: "all" | "students" | "admins" | "users";
+  userIds?: string[];
+};
+
+async function handleNotify(request: Request, env: EnvBag): Promise<Response> {
+  if (request.method !== "POST") {
+    return new Response(JSON.stringify({ error: "POST only" }), { status: 405 });
+  }
+
+  const restKey = env.ONESIGNAL_REST_API_KEY ?? "";
+  if (!restKey) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        skipped: true,
+        reason: "Set ONESIGNAL_REST_API_KEY as a Cloudflare Worker secret to send pushes.",
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }
+
+  let body: NotifyBody;
+  try {
+    body = (await request.json()) as NotifyBody;
+  } catch {
+    return new Response(JSON.stringify({ error: "invalid json" }), { status: 400 });
+  }
+
+  const title = (body.title ?? "EdMessenger").slice(0, 80);
+  const message = (body.message ?? "").slice(0, 160);
+  const url = body.url ?? "/";
+  const appId = env.ONESIGNAL_APP_ID ?? ONESIGNAL_APP_ID;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const payload: Record<string, any> = {
+    app_id: appId,
+    headings: { en: title },
+    contents: { en: message || title },
+    url,
+    chrome_web_icon: "/logo-pwa.png",
+    firefox_icon: "/logo-pwa.png",
+  };
+
+  if (body.audience === "users" && body.userIds?.length) {
+    payload.include_aliases = { external_id: body.userIds };
+    payload.target_channel = "push";
+  } else if (body.audience === "admins") {
+    payload.filters = [{ field: "tag", key: "role", relation: "=", value: "admin" }];
+  } else if (body.audience === "students") {
+    payload.filters = [{ field: "tag", key: "role", relation: "=", value: "student" }];
+  } else {
+    payload.included_segments = ["All"];
+  }
+
+  const res = await fetch("https://api.onesignal.com/notifications", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      Authorization: `Key ${restKey}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  return new Response(text, {
+    status: res.status,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
       const url = new URL(request.url);
+      const envBag = (env ?? {}) as EnvBag;
+
       if (url.pathname === "/api/keepalive" || url.pathname === "/cdn-cgi/keepalive") {
         return handleKeepAlive();
+      }
+      if (url.pathname === "/api/notify") {
+        return handleNotify(request, envBag);
       }
 
       const handler = await getServerEntry();
@@ -98,7 +181,6 @@ export default {
     }
   },
 
-  /** Cloudflare Cron Trigger — keeps Worker + Supabase warm */
   async scheduled(_controller: unknown, _env: unknown, ctx: { waitUntil: (p: Promise<unknown>) => void }) {
     ctx.waitUntil(handleKeepAlive());
   },

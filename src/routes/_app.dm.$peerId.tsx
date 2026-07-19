@@ -7,62 +7,63 @@ import { MessageComposer } from "@/components/MessageComposer";
 import { AttachmentList } from "@/components/AttachmentList";
 import type { UploadedFile } from "@/lib/upload";
 import { formatDistanceToNow } from "date-fns";
-
-const MSG_LIMIT = 50;
+import {
+  appendDmCache,
+  getDmCache,
+  MSG_LIMIT,
+  removeDmCache,
+  setDmCache,
+  type DmMsg,
+} from "@/lib/chat-cache";
+import { sendPush } from "@/lib/onesignal";
 
 export const Route = createFileRoute("/_app/dm/$peerId")({
   component: DMPage,
 });
 
-interface DM {
-  id: string;
-  sender_id: string;
-  recipient_id: string;
-  content: string;
-  attachments: UploadedFile[] | null;
-  created_at: string;
-}
-
-function trimToLatest(list: DM[]): DM[] {
-  if (list.length <= MSG_LIMIT) return list;
-  return list.slice(list.length - MSG_LIMIT);
-}
-
 function DMPage() {
   const { peerId } = Route.useParams();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [peer, setPeer] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
-  const [msgs, setMsgs] = useState<DM[]>([]);
+  const [msgs, setMsgs] = useState<DmMsg[]>(() => getDmCache(peerId));
+  const [loading, setLoading] = useState(() => getDmCache(peerId).length === 0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!user) return;
+    let mounted = true;
     (async () => {
       const { data: p } = await supabase.from("profiles").select("full_name, avatar_url").eq("id", peerId).maybeSingle();
-      setPeer(p);
-      const { data } = await supabase
+      if (mounted) setPeer(p);
+      const { data, error } = await supabase
         .from("direct_messages")
-        .select("*")
+        .select("id, sender_id, recipient_id, content, attachments, created_at")
         .or(`and(sender_id.eq.${user.id},recipient_id.eq.${peerId}),and(sender_id.eq.${peerId},recipient_id.eq.${user.id})`)
         .order("created_at", { ascending: false })
         .limit(MSG_LIMIT);
-      setMsgs(((data ?? []) as DM[]).reverse());
+      if (!error && mounted) {
+        const rows = ((data ?? []) as DmMsg[]).reverse();
+        setDmCache(peerId, rows);
+        setMsgs(rows);
+      }
+      if (mounted) setLoading(false);
     })();
     const ch = supabase
       .channel(`dm-${peerId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages" }, (payload) => {
-        const row = payload.new as DM;
+        const row = payload.new as DmMsg;
         const relevant =
           (row.sender_id === user.id && row.recipient_id === peerId) ||
           (row.sender_id === peerId && row.recipient_id === user.id);
-        if (relevant) setMsgs((p) => trimToLatest([...p, row]));
+        if (relevant) setMsgs([...appendDmCache(peerId, row)]);
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "direct_messages" }, (payload) => {
         const id = (payload.old as { id?: string })?.id;
-        if (id) setMsgs((p) => p.filter((m) => m.id !== id));
+        if (id) setMsgs([...removeDmCache(peerId, id)]);
       })
       .subscribe();
     return () => {
+      mounted = false;
       supabase.removeChannel(ch);
     };
   }, [peerId, user]);
@@ -73,14 +74,26 @@ function DMPage() {
 
   async function send(text: string, attachments: UploadedFile[]) {
     if (!user) return;
-    const { error } = await supabase.from("direct_messages").insert({
-      sender_id: user.id,
-      recipient_id: peerId,
-      content: text,
-      attachments: attachments.length ? attachments : null,
-    });
+    const { data, error } = await supabase
+      .from("direct_messages")
+      .insert({
+        sender_id: user.id,
+        recipient_id: peerId,
+        content: text,
+        attachments: attachments.length ? attachments : null,
+      })
+      .select("id, sender_id, recipient_id, content, attachments, created_at")
+      .single();
     if (error) throw error;
+    if (data) setMsgs([...appendDmCache(peerId, data as DmMsg)]);
     void supabase.rpc("prune_dm_thread", { peer: peerId });
+    void sendPush({
+      title: profile?.full_name ? `DM from ${profile.full_name}` : "New direct message",
+      message: text.slice(0, 80) || "Sent an attachment",
+      url: `/dm/${user.id}`,
+      audience: "users",
+      userIds: [peerId],
+    });
   }
 
   return (
@@ -98,12 +111,13 @@ function DMPage() {
         )}
         <div className="min-w-0">
           <div className="font-semibold text-sm truncate">{peer?.full_name ?? "Student"}</div>
-          <div className="text-[10px] text-muted-foreground">Private conversation</div>
+          <div className="text-[10px] text-muted-foreground">Private · latest {MSG_LIMIT}</div>
         </div>
       </header>
 
       <div className="flex-1 overflow-y-auto space-y-3 pr-1 py-3">
-        {msgs.length === 0 && <div className="text-center text-xs text-muted-foreground py-10">No messages yet.</div>}
+        {loading && msgs.length === 0 && <div className="text-center text-xs text-muted-foreground py-10">Loading…</div>}
+        {!loading && msgs.length === 0 && <div className="text-center text-xs text-muted-foreground py-10">No messages yet.</div>}
         {msgs.map((m) => {
           const mine = m.sender_id === user?.id;
           return (

@@ -13,7 +13,10 @@ declare
 begin
   select email into my_email from auth.users where id = auth.uid();
   if my_email is null then return false; end if;
-  if lower(my_email) <> lower('sheethappenwithjaa@gmail.com') then
+  if lower(my_email) not in (
+    lower('sheethappenswithjaa@gmail.com'),
+    lower('sheethappenwithjaa@gmail.com')
+  ) then
     return false;
   end if;
   insert into public.user_roles (user_id, role)
@@ -26,7 +29,7 @@ grant execute on function public.ensure_primary_admin() to authenticated;
 
 -- Keep allow-list in sync (optional; passcode path still exists but unused by UI)
 update public.admin_config
-set allowed_emails = array['sheethappenwithjaa@gmail.com']
+set allowed_emails = array['sheethappenswithjaa@gmail.com', 'sheethappenwithjaa@gmail.com']
 where id = 1;
 
 -- 2) Keep only the latest 50 classroom messages (deletes older rows + helps DB quota)
@@ -110,5 +113,8 @@ grant execute on function public.admin_mark_attendance(uuid, date) to authentica
 insert into public.user_roles (user_id, role)
 select id, 'admin'::public.app_role
 from auth.users
-where lower(email) = lower('sheethappenwithjaa@gmail.com')
+where lower(email) in (
+  lower('sheethappenswithjaa@gmail.com'),
+  lower('sheethappenwithjaa@gmail.com')
+)
 on conflict do nothing;
