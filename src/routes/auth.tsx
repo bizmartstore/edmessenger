@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { MessageCircle, Sparkles, BookOpen } from "lucide-react";
 import { toast } from "sonner";
-import logoAsset from "@/assets/edmessenger_logo.png.asset.json";
+import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -24,6 +24,9 @@ function AuthPage() {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) navigate({ to: "/" });
     });
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
   }, [navigate]);
 
   async function signInWithGoogle() {
@@ -39,9 +42,9 @@ function AuthPage() {
     <div className="min-h-screen flex flex-col safe-top">
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 max-w-md mx-auto w-full">
         <img
-          src={logoAsset.url}
+          src="/logo.png"
           alt="EdMessenger"
-          className="w-24 h-24 rounded-3xl shadow-glow mb-6 animate-pop object-cover"
+          className="w-28 h-28 rounded-full shadow-glow mb-6 animate-pop object-cover bg-white"
         />
         <h1 className="text-4xl font-extrabold tracking-tight text-center animate-fade-up">
           Welcome to{" "}
@@ -85,9 +88,10 @@ function AuthPage() {
         </button>
 
         <p className="mt-6 text-[11px] text-muted-foreground text-center">
-          By continuing you agree to be a kind, curious student. 🎓
+          By continuing you agree to be a kind, curious student.
         </p>
       </div>
+      <PwaInstallPrompt />
     </div>
   );
 }

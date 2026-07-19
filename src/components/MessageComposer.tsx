@@ -23,8 +23,8 @@ export function MessageComposer({ userId, onSend, placeholder = "Type a messageâ
     try {
       const uploaded: UploadedFile[] = [];
       for (const f of Array.from(files)) {
-        if (f.size > 15 * 1024 * 1024) {
-          toast.error(`${f.name} is too large (max 15MB)`);
+        if (f.size > 8 * 1024 * 1024) {
+          toast.error(`${f.name} is too large (max 8MB before conversion)`);
           continue;
         }
         const u = await uploadToBucket("chat-files", f, userId);

@@ -1,6 +1,12 @@
 import { useEffect, useState, useCallback, createContext, useContext, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  getStoredAdminViewMode,
+  isPrimaryAdminEmail,
+  setStoredAdminViewMode,
+  type AdminViewMode,
+} from "@/lib/admin";
 
 export interface Profile {
   id: string;
@@ -14,10 +20,17 @@ interface AuthState {
   session: Session | null;
   user: User | null;
   profile: Profile | null;
+  /** True when the signed-in account holds the admin role in DB */
   isAdmin: boolean;
+  /** Primary admin email can preview the student UI without losing admin */
+  viewMode: AdminViewMode;
+  /** Effective admin access for routing/UI (false when viewing as user) */
+  actingAsAdmin: boolean;
+  canToggleAdmin: boolean;
   loading: boolean;
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
+  setViewMode: (mode: AdminViewMode) => void;
 }
 
 const AuthCtx = createContext<AuthState | null>(null);
@@ -26,11 +39,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [viewMode, setViewModeState] = useState<AdminViewMode>(() => getStoredAdminViewMode());
   const [loading, setLoading] = useState(true);
 
+  const setViewMode = useCallback((mode: AdminViewMode) => {
+    setStoredAdminViewMode(mode);
+    setViewModeState(mode);
+  }, []);
+
   const loadProfile = useCallback(async (user: User | null) => {
-    if (!user) { setProfile(null); setIsAdmin(false); return; }
-    // Ensure profile row exists
+    if (!user) {
+      setProfile(null);
+      setIsAdmin(false);
+      return;
+    }
     const { data: existing } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
     let p = existing as Profile | null;
     if (!p) {
@@ -43,8 +65,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       p = inserted as Profile | null;
     }
     setProfile(p);
-    const { data: role } = await supabase.from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle();
-    setIsAdmin(Boolean(role));
+
+    // Primary admin: ensure role without passcode (ignore if SQL not migrated yet)
+    if (isPrimaryAdminEmail(user.email)) {
+      await supabase.rpc("ensure_primary_admin");
+    }
+
+    const { data: role } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .eq("role", "admin")
+      .maybeSingle();
+    setIsAdmin(Boolean(role) || isPrimaryAdminEmail(user.email));
   }, []);
 
   const refresh = useCallback(async () => {
@@ -64,16 +97,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(s);
       loadProfile(s?.user ?? null);
     });
-    return () => { mounted = false; sub.subscription.unsubscribe(); };
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
   }, [loadProfile]);
+
+  // Lightweight keep-alive while the app tab is open (prevents Supabase free-tier pause)
+  useEffect(() => {
+    if (!session) return;
+    const ping = () => {
+      fetch("/api/keepalive", { cache: "no-store" }).catch(() => {});
+      navigator.serviceWorker?.controller?.postMessage({ type: "KEEPALIVE" });
+    };
+    ping();
+    const id = window.setInterval(ping, 4 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [session]);
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
-    setSession(null); setProfile(null); setIsAdmin(false);
+    setSession(null);
+    setProfile(null);
+    setIsAdmin(false);
   }, []);
 
+  const canToggleAdmin = isAdmin && isPrimaryAdminEmail(session?.user?.email);
+  const actingAsAdmin = isAdmin && (!canToggleAdmin || viewMode === "admin");
+
   return (
-    <AuthCtx.Provider value={{ session, user: session?.user ?? null, profile, isAdmin, loading, refresh, signOut }}>
+    <AuthCtx.Provider
+      value={{
+        session,
+        user: session?.user ?? null,
+        profile,
+        isAdmin,
+        viewMode,
+        actingAsAdmin,
+        canToggleAdmin,
+        loading,
+        refresh,
+        signOut,
+        setViewMode,
+      }}
+    >
       {children}
     </AuthCtx.Provider>
   );

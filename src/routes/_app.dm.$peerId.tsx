@@ -8,6 +8,8 @@ import { AttachmentList } from "@/components/AttachmentList";
 import type { UploadedFile } from "@/lib/upload";
 import { formatDistanceToNow } from "date-fns";
 
+const MSG_LIMIT = 50;
+
 export const Route = createFileRoute("/_app/dm/$peerId")({
   component: DMPage,
 });
@@ -19,6 +21,11 @@ interface DM {
   content: string;
   attachments: UploadedFile[] | null;
   created_at: string;
+}
+
+function trimToLatest(list: DM[]): DM[] {
+  if (list.length <= MSG_LIMIT) return list;
+  return list.slice(list.length - MSG_LIMIT);
 }
 
 function DMPage() {
@@ -37,9 +44,9 @@ function DMPage() {
         .from("direct_messages")
         .select("*")
         .or(`and(sender_id.eq.${user.id},recipient_id.eq.${peerId}),and(sender_id.eq.${peerId},recipient_id.eq.${user.id})`)
-        .order("created_at", { ascending: true })
-        .limit(200);
-      setMsgs((data ?? []) as DM[]);
+        .order("created_at", { ascending: false })
+        .limit(MSG_LIMIT);
+      setMsgs(((data ?? []) as DM[]).reverse());
     })();
     const ch = supabase
       .channel(`dm-${peerId}`)
@@ -48,13 +55,21 @@ function DMPage() {
         const relevant =
           (row.sender_id === user.id && row.recipient_id === peerId) ||
           (row.sender_id === peerId && row.recipient_id === user.id);
-        if (relevant) setMsgs((p) => [...p, row]);
+        if (relevant) setMsgs((p) => trimToLatest([...p, row]));
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "direct_messages" }, (payload) => {
+        const id = (payload.old as { id?: string })?.id;
+        if (id) setMsgs((p) => p.filter((m) => m.id !== id));
       })
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      supabase.removeChannel(ch);
+    };
   }, [peerId, user]);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs.length]);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [msgs.length]);
 
   async function send(text: string, attachments: UploadedFile[]) {
     if (!user) return;
@@ -65,10 +80,11 @@ function DMPage() {
       attachments: attachments.length ? attachments : null,
     });
     if (error) throw error;
+    void supabase.rpc("prune_dm_thread", { peer: peerId });
   }
 
   return (
-    <div className="max-w-md mx-auto px-4 pt-4 pb-4 flex flex-col h-[calc(100dvh-9rem)]">
+    <div className="max-w-md mx-auto px-4 pt-4 pb-4 flex flex-col h-[calc(100dvh-7rem)]">
       <header className="flex items-center gap-3 pb-3 border-b border-border">
         <Link to="/chat" className="p-2 -ml-2 rounded-xl hover:bg-muted">
           <ArrowLeft className="h-5 w-5" />
@@ -92,7 +108,9 @@ function DMPage() {
           const mine = m.sender_id === user?.id;
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"} animate-fade-up`}>
-              <div className={`max-w-[80%] rounded-2xl px-3 py-2 ${mine ? "gradient-primary text-primary-foreground rounded-br-md" : "bg-card border border-border rounded-bl-md"}`}>
+              <div
+                className={`max-w-[80%] rounded-2xl px-3 py-2 ${mine ? "gradient-primary text-primary-foreground rounded-br-md" : "bg-card border border-border rounded-bl-md"}`}
+              >
                 {m.content && <div className="text-sm whitespace-pre-wrap break-words">{m.content}</div>}
                 <AttachmentList files={m.attachments} />
                 <div className={`text-[9px] mt-1 ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>

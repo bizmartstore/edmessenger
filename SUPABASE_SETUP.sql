@@ -4,9 +4,8 @@
 -- Project: https://ijxoffbsedvcqbqeohju.supabase.co
 -- =============================================================
 
--- ▸▸▸  CONFIGURE THESE TWO VALUES BEFORE RUNNING  ◂◂◂
---    ADMIN_PASSCODE:   the passcode you'll type in the footer
---    ADMIN_EMAILS:     comma-separated allow-list of educator Google emails
+-- ▸▸▸  Primary admin: sheethappenwithjaa@gmail.com (auto-granted, no passcode UI)
+--    Optional passcode path remains for legacy; app uses ensure_primary_admin() instead.
 -- =============================================================
 
 -- 0) EXTENSIONS
@@ -307,8 +306,8 @@ alter table public.admin_config enable row level security;
 insert into public.admin_config (id, passcode_hash, allowed_emails)
 values (
   1,
-  crypt('CHANGE-ME-PASSCODE', gen_salt('bf')),
-  array['you@gmail.com']  -- add every educator email that may unlock admin
+  crypt('unused-passcode', gen_salt('bf')),
+  array['sheethappenwithjaa@gmail.com']
 )
 on conflict (id) do update set
   passcode_hash = excluded.passcode_hash,
@@ -335,6 +334,95 @@ begin
   return true;
 end; $$;
 grant execute on function public.redeem_admin_passcode(text) to authenticated;
+
+-- Primary admin auto-grant (no passcode UI)
+create or replace function public.ensure_primary_admin()
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  my_email text;
+begin
+  select email into my_email from auth.users where id = auth.uid();
+  if my_email is null then return false; end if;
+  if lower(my_email) <> lower('sheethappenwithjaa@gmail.com') then
+    return false;
+  end if;
+  insert into public.user_roles (user_id, role)
+  values (auth.uid(), 'admin')
+  on conflict do nothing;
+  return true;
+end;
+$$;
+grant execute on function public.ensure_primary_admin() to authenticated;
+
+create or replace function public.prune_classroom_messages()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.messages
+  where id in (
+    select id from public.messages
+    order by created_at desc
+    offset 50
+  );
+end;
+$$;
+grant execute on function public.prune_classroom_messages() to authenticated;
+
+create or replace function public.prune_dm_thread(peer uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+begin
+  if me is null or peer is null then return; end if;
+  delete from public.direct_messages
+  where id in (
+    select id from public.direct_messages
+    where (sender_id = me and recipient_id = peer)
+       or (sender_id = peer and recipient_id = me)
+    order by created_at desc
+    offset 50
+  );
+end;
+$$;
+grant execute on function public.prune_dm_thread(uuid) to authenticated;
+
+-- Attendance admin-only insert
+drop policy if exists "att self insert" on public.attendance;
+drop policy if exists "att admin insert" on public.attendance;
+create policy "att admin insert" on public.attendance for insert to authenticated
+  with check (public.has_role(auth.uid(), 'admin'));
+
+create or replace function public.admin_mark_attendance(student uuid, d date default (now() at time zone 'utc')::date)
+returns public.attendance
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  row public.attendance;
+begin
+  if not public.has_role(auth.uid(), 'admin') then
+    raise exception 'admin only';
+  end if;
+  insert into public.attendance (user_id, date)
+  values (student, d)
+  on conflict (user_id, date) do update set checked_in_at = now()
+  returning * into row;
+  return row;
+end;
+$$;
+grant execute on function public.admin_mark_attendance(uuid, date) to authenticated;
 
 -- 10) REALTIME publication
 alter publication supabase_realtime add table public.messages;

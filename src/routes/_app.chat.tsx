@@ -8,6 +8,8 @@ import type { UploadedFile } from "@/lib/upload";
 import { formatDistanceToNow } from "date-fns";
 import { Users, MessagesSquare } from "lucide-react";
 
+const MSG_LIMIT = 50;
+
 export const Route = createFileRoute("/_app/chat")({
   component: ChatPage,
 });
@@ -29,8 +31,13 @@ interface DMPreview {
   last_at: string;
 }
 
+function trimToLatest(list: Msg[]): Msg[] {
+  if (list.length <= MSG_LIMIT) return list;
+  return list.slice(list.length - MSG_LIMIT);
+}
+
 function ChatPage() {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [tab, setTab] = useState<"class" | "dms">("class");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [dms, setDms] = useState<DMPreview[]>([]);
@@ -38,30 +45,36 @@ function ChatPage() {
   const [people, setPeople] = useState<{ id: string; full_name: string | null; avatar_url: string | null }[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Class chat load + realtime
   useEffect(() => {
     if (tab !== "class") return;
     let mounted = true;
     (async () => {
+      // Fetch newest 50, then display oldest→newest
       const { data } = await supabase
         .from("messages")
         .select("*, profiles:profiles!messages_user_id_fkey(full_name, avatar_url)")
-        .order("created_at", { ascending: true })
-        .limit(200);
-      if (mounted) setMessages((data ?? []) as Msg[]);
+        .order("created_at", { ascending: false })
+        .limit(MSG_LIMIT);
+      if (mounted) setMessages(((data ?? []) as Msg[]).reverse());
     })();
     const ch = supabase
       .channel("classroom-chat")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, async (payload) => {
         const row = payload.new as Msg;
         const { data: p } = await supabase.from("profiles").select("full_name, avatar_url").eq("id", row.user_id).maybeSingle();
-        setMessages((prev) => [...prev, { ...row, profiles: p as Msg["profiles"] }]);
+        setMessages((prev) => trimToLatest([...prev, { ...row, profiles: p as Msg["profiles"] }]));
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, (payload) => {
+        const id = (payload.old as { id?: string })?.id;
+        if (id) setMessages((prev) => prev.filter((m) => m.id !== id));
       })
       .subscribe();
-    return () => { mounted = false; supabase.removeChannel(ch); };
+    return () => {
+      mounted = false;
+      supabase.removeChannel(ch);
+    };
   }, [tab]);
 
-  // DM previews
   useEffect(() => {
     if (tab !== "dms" || !user) return;
     (async () => {
@@ -77,7 +90,10 @@ function ChatPage() {
   useEffect(() => {
     if (tab !== "dms") return;
     const q = peopleQuery.trim();
-    if (q.length < 1) { setPeople([]); return; }
+    if (q.length < 1) {
+      setPeople([]);
+      return;
+    }
     const timer = setTimeout(async () => {
       const { data } = await supabase
         .from("profiles")
@@ -98,10 +114,12 @@ function ChatPage() {
       attachments: attachments.length ? attachments : null,
     });
     if (error) throw error;
+    // Prune older than 50 on the server to protect quota
+    void supabase.rpc("prune_classroom_messages");
   }
 
   return (
-    <div className="max-w-md mx-auto px-4 pt-4 pb-4 flex flex-col h-[calc(100dvh-9rem)]">
+    <div className="max-w-md mx-auto px-4 pt-4 pb-4 flex flex-col h-[calc(100dvh-7rem)]">
       <div className="flex items-center gap-2 mb-3">
         <button
           onClick={() => setTab("class")}
@@ -121,23 +139,24 @@ function ChatPage() {
         <>
           <div className="flex-1 overflow-y-auto space-y-3 pr-1">
             {messages.length === 0 && (
-              <div className="text-center text-xs text-muted-foreground py-10">No messages yet. Say hi 👋</div>
+              <div className="text-center text-xs text-muted-foreground py-10">No messages yet. Say hi</div>
             )}
             {messages.map((m) => {
               const mine = m.user_id === user?.id;
               const name = m.profiles?.full_name ?? "Student";
               return (
                 <div key={m.id} className={`flex gap-2 ${mine ? "justify-end" : "justify-start"} animate-fade-up`}>
-                  {!mine && (
-                    m.profiles?.avatar_url ? (
+                  {!mine &&
+                    (m.profiles?.avatar_url ? (
                       <img src={m.profiles.avatar_url} alt="" className="h-7 w-7 rounded-full object-cover shrink-0 mt-auto" />
                     ) : (
                       <div className="h-7 w-7 rounded-full gradient-primary grid place-items-center text-[10px] text-primary-foreground font-bold shrink-0 mt-auto">
                         {name[0]?.toUpperCase()}
                       </div>
-                    )
-                  )}
-                  <div className={`max-w-[75%] rounded-2xl px-3 py-2 ${mine ? "gradient-primary text-primary-foreground rounded-br-md" : "bg-card border border-border rounded-bl-md"}`}>
+                    ))}
+                  <div
+                    className={`max-w-[75%] rounded-2xl px-3 py-2 ${mine ? "gradient-primary text-primary-foreground rounded-br-md" : "bg-card border border-border rounded-bl-md"}`}
+                  >
                     {!mine && <div className="text-[10px] font-semibold opacity-70 mb-0.5">{name}</div>}
                     {m.content && <div className="text-sm whitespace-pre-wrap break-words">{m.content}</div>}
                     <AttachmentList files={m.attachments} />

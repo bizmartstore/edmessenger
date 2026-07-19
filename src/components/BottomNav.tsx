@@ -1,5 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { MessageCircle, BookOpen, ClipboardList, CalendarCheck, Home } from "lucide-react";
+import { MessageCircle, BookOpen, ClipboardList, Home } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const items = [
@@ -7,7 +7,6 @@ const items = [
   { to: "/chat", label: "Chat", icon: MessageCircle },
   { to: "/lessons", label: "Lessons", icon: BookOpen },
   { to: "/quizzes", label: "Quizzes", icon: ClipboardList },
-  { to: "/attendance", label: "Attend", icon: CalendarCheck },
 ];
 
 export function BottomNav() {

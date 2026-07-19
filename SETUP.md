@@ -1,46 +1,40 @@
-# EduChat — Setup checklist
+# EdMessenger — Setup checklist
 
-Everything the app needs from your Supabase project (`ijxoffbsedvcqbqeohju`).
+Project Supabase: `https://ijxoffbsedvcqbqeohju.supabase.co`
 
 ## 1. Run the SQL
 
-Open **Supabase → SQL Editor**, paste the entire contents of `SUPABASE_SETUP.sql`, and **before running** edit these two lines near the bottom:
+**New project:** paste `SUPABASE_SETUP.sql` in the Supabase SQL Editor and run it.
 
-```sql
-crypt('CHANGE-ME-PASSCODE', gen_salt('bf'))   -- ← your footer passcode
-array['you@gmail.com']                         -- ← educator email allow-list
-```
-
-Only Google accounts in the allow-list can redeem the passcode and become admin. To change either later, re-run just that `insert … on conflict … do update` block.
+**Existing project:** run `SUPABASE_MIGRATION_QUOTA.sql` to add:
+- Primary admin auto-grant for `sheethappenwithjaa@gmail.com` (no passcode)
+- Keep latest 50 classroom + DM messages
+- Admin-only attendance marking
 
 ## 2. Enable Google sign-in
 
-Supabase → **Authentication → Providers → Google → Enable** and paste your OAuth Client ID + Secret from Google Cloud Console.
+Supabase → **Authentication → Providers → Google → Enable**
 
-Then Supabase → **Authentication → URL Configuration**:
+Supabase → **Authentication → URL Configuration**:
+- **Site URL**: your Cloudflare Worker / deployed URL
+- **Redirect URLs**: add the deployed URL (and local `http://localhost:5173` if needed)
 
-- **Site URL**: your deployed URL (e.g. `https://your-app.lovable.app`)
-- **Redirect URLs**: add both the deployed URL and your Lovable preview URL
+## 3. Deploy / keep-alive
 
-## 3. That's it
+Cloudflare Workers do not “sleep”, but **Supabase free-tier can pause**. The app pings `/api/keepalive` every few minutes (client + service worker). `wrangler.toml` also schedules a cron every 5 minutes — enable Cron Triggers if you deploy with Wrangler.
 
-Sign in with Google → you're a student. Tap the "EduChat • Educator access" text at the bottom → enter your passcode → admin dashboard unlocks.
+## 4. Sign in
 
-## Features shipped
+- Sign in with Google as a student normally.
+- Sign in as `sheethappenwithjaa@gmail.com` → admin is granted automatically.
+- Use the **Student / Admin** toggle on the home screen (or Student button in admin) to switch views.
+- Footer passcode UI has been removed.
 
-- Google auth (managed by Supabase)
-- Classroom chat (realtime) + private DMs
-- File attachments: images auto-compressed to ~500 KB; PDF/DOC/PPT/XLS uploaded as-is (max 15 MB)
-- Lessons: admin uploads PDFs, students read or download
-- Quizzes: admin creates multiple-choice, publishes; students take and get graded automatically
-- Attendance: one-tap daily check-in; admin sees daily rosters
-- Student reports: attendance days, quizzes taken, average score
-- Passcode-gated admin footer with email allow-list (defence in depth)
-- PWA: installable, mobile-first, safe-area aware
-- Aggressive Lovable badge hide (CSS)
+## Features
 
-## Notes
-
-- **True Word/PPT compression** requires a server-side office toolchain that isn't available on the edge, so those file types are stored as-is. Images and PDFs benefit from client-side compression / natural PDF compactness respectively. If you want server-side PDF re-compression later, add a Supabase Edge Function with `pdf-lib` or similar.
-- Realtime is enabled on `messages` and `direct_messages`.
-- Storage buckets `chat-files` and `lessons` are created as public so URLs work directly in `<img>` and PDF viewers.
+- Local logos (`/logo.png`, `/logo-pwa.png`) for Cloudflare (no Lovable CDN dependency)
+- PWA install prompt + service worker; PWA icon uses `logo-pwa.png`
+- Classroom + DM chat: latest **50** messages kept permanently (older pruned)
+- Uploads converted to lean formats (WebP / HTML / text) to protect storage quota
+- Attendance: **admin only** (mark students present from Admin → Attendance)
+- Quizzes, lessons, student reports

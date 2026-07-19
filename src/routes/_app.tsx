@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { BottomNav } from "@/components/BottomNav";
-import { AdminFooter } from "@/components/AdminFooter";
+import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
 
 export const Route = createFileRoute("/_app")({
   ssr: false,
@@ -27,13 +27,11 @@ function AppLayout() {
 
   return (
     <div className="min-h-screen flex flex-col safe-top">
-      <main className="flex-1 pb-28 animate-fade-up">
+      <main className="flex-1 pb-24 animate-fade-up">
         <Outlet />
       </main>
       <BottomNav />
-      <div className="pb-24">
-        <AdminFooter />
-      </div>
+      <PwaInstallPrompt />
     </div>
   );
 }
