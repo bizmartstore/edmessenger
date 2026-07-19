@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { ClipboardList, CheckCircle2, ArrowRight } from "lucide-react";
 
 export const Route = createFileRoute("/_app/quizzes")({
@@ -20,7 +21,12 @@ interface Quiz {
 
 function QuizzesList() {
   const { user } = useAuth();
+  const { markRead } = useUnreadBadges();
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+
+  useEffect(() => {
+    void markRead("quizzes");
+  }, [markRead]);
 
   useEffect(() => {
     if (!user) return;

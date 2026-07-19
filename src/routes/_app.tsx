@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { BottomNav } from "@/components/BottomNav";
 import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
+import { UnreadBadgesProvider } from "@/hooks/useUnreadBadges";
 
 export const Route = createFileRoute("/_app")({
   ssr: false,
@@ -26,12 +27,14 @@ function AppLayout() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col safe-top">
-      <main className="flex-1 pb-24 animate-fade-up">
-        <Outlet />
-      </main>
-      <BottomNav />
-      <PwaInstallPrompt />
-    </div>
+    <UnreadBadgesProvider>
+      <div className="min-h-screen flex flex-col safe-top">
+        <main className="flex-1 pb-24 animate-fade-up">
+          <Outlet />
+        </main>
+        <BottomNav />
+        <PwaInstallPrompt />
+      </div>
+    </UnreadBadgesProvider>
   );
 }

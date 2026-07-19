@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { BookOpen, Download, Eye, FileText } from "lucide-react";
 import { humanSize } from "@/lib/upload";
 import { formatDistanceToNow } from "date-fns";
+import { useUnreadBadges } from "@/hooks/useUnreadBadges";
 
 export const Route = createFileRoute("/_app/lessons")({
   component: LessonsPage,
@@ -20,8 +21,13 @@ interface Lesson {
 }
 
 function LessonsPage() {
+  const { markRead } = useUnreadBadges();
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    void markRead("lessons");
+  }, [markRead]);
 
   useEffect(() => {
     (async () => {

@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { PushOptIn } from "@/components/PushOptIn";
+import { BannerCarousel } from "@/components/BannerCarousel";
+import { UnreadBadge, useUnreadBadges } from "@/hooks/useUnreadBadges";
 
 export const Route = createFileRoute("/_app/")({
   component: Home,
@@ -28,6 +30,7 @@ interface Announcement {
 
 function Home() {
   const { profile, signOut, canToggleAdmin, viewMode, setViewMode, isAdmin, actingAsAdmin } = useAuth();
+  const { counts, markRead } = useUnreadBadges();
   const navigate = useNavigate();
   const [stats, setStats] = useState({ lessons: 0, quizzes: 0, activities: 0 });
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -49,23 +52,67 @@ function Home() {
     })();
   }, []);
 
+  useEffect(() => {
+    const t = window.setTimeout(() => void markRead("announcements"), 2000);
+    return () => window.clearTimeout(t);
+  }, [markRead]);
+
   const first = (profile?.full_name ?? "").split(" ")[0] || "friend";
 
   const tiles = [
-    { to: "/chat", icon: MessageCircle, label: "Classroom Chat", desc: "Say hi to your class", color: "from-violet-500 to-fuchsia-500" },
-    { to: "/activities", icon: FolderKanban, label: "Activities", desc: `${stats.activities} assigned`, color: "from-sky-400 to-blue-600" },
-    { to: "/lessons", icon: BookOpen, label: "Lessons", desc: `${stats.lessons} available`, color: "from-amber-400 to-orange-500" },
-    { to: "/quizzes", icon: ClipboardList, label: "Quizzes", desc: `${stats.quizzes} to take`, color: "from-emerald-400 to-teal-500" },
+    {
+      to: "/chat",
+      icon: MessageCircle,
+      label: "Classroom Chat",
+      desc: "Say hi to your class",
+      color: "from-violet-500 to-fuchsia-500",
+      badge: counts.chat,
+    },
+    {
+      to: "/activities",
+      icon: FolderKanban,
+      label: "Activities",
+      desc: `${stats.activities} assigned`,
+      color: "from-sky-400 to-blue-600",
+      badge: counts.activities,
+    },
+    {
+      to: "/lessons",
+      icon: BookOpen,
+      label: "Lessons",
+      desc: `${stats.lessons} available`,
+      color: "from-amber-400 to-orange-500",
+      badge: counts.lessons,
+    },
+    {
+      to: "/quizzes",
+      icon: ClipboardList,
+      label: "Quizzes",
+      desc: `${stats.quizzes} to take`,
+      color: "from-emerald-400 to-teal-500",
+      badge: counts.quizzes,
+    },
   ];
 
   return (
     <div className="px-5 pt-6 max-w-md mx-auto pb-4">
       <header className="flex items-center gap-3">
-        <img src="/logo.png" alt="EdMessenger" className="h-12 w-12 rounded-2xl object-cover shadow-card" />
-        <div className="min-w-0 flex-1">
+        <Link to="/profile" className="relative shrink-0">
+          {profile?.avatar_url ? (
+            <img
+              src={profile.avatar_url}
+              alt=""
+              className="h-12 w-12 rounded-2xl object-cover shadow-card ring-2 ring-primary/20"
+            />
+          ) : (
+            <img src="/logo.png" alt="EdMessenger" className="h-12 w-12 rounded-2xl object-cover shadow-card" />
+          )}
+        </Link>
+        <Link to="/profile" className="min-w-0 flex-1">
           <div className="text-xs text-muted-foreground">Welcome back</div>
           <div className="font-bold truncate">{first}</div>
-        </div>
+          <div className="text-[10px] text-primary font-medium">View account →</div>
+        </Link>
         <PushOptIn />
         {(canToggleAdmin || isAdmin) && (
           <button
@@ -109,8 +156,15 @@ function Home() {
         </div>
       )}
 
+      <BannerCarousel />
+
       <div className="mt-5 rounded-3xl gradient-hero p-5 text-white shadow-glow overflow-hidden relative">
         <Megaphone className="absolute -top-1 -right-1 h-20 w-20 text-white/10" />
+        {counts.announcements > 0 && (
+          <span className="absolute top-3 right-3 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold grid place-items-center">
+            {counts.announcements > 9 ? "9+" : counts.announcements}
+          </span>
+        )}
         <div className="text-xs uppercase tracking-widest opacity-80">Announcements</div>
         {announcements.length === 0 ? (
           <>
@@ -139,8 +193,9 @@ function Home() {
           <Link
             key={t.to}
             to={t.to}
-            className="group rounded-2xl p-4 bg-card shadow-card hover:shadow-glow hover:-translate-y-0.5 transition-all border border-border"
+            className="group relative rounded-2xl p-4 bg-card shadow-card hover:shadow-glow hover:-translate-y-0.5 transition-all border border-border"
           >
+            <UnreadBadge count={t.badge} className="top-2 right-2 -translate-y-0 translate-x-0" />
             <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${t.color} grid place-items-center mb-3 group-hover:scale-110 transition-transform`}>
               <t.icon className="h-5 w-5 text-white" />
             </div>

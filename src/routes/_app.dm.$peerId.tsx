@@ -16,6 +16,7 @@ import {
   type DmMsg,
 } from "@/lib/chat-cache";
 import { sendPush } from "@/lib/onesignal";
+import { useUnreadBadges } from "@/hooks/useUnreadBadges";
 
 export const Route = createFileRoute("/_app/dm/$peerId")({
   component: DMPage,
@@ -24,10 +25,15 @@ export const Route = createFileRoute("/_app/dm/$peerId")({
 function DMPage() {
   const { peerId } = Route.useParams();
   const { user, profile } = useAuth();
+  const { markRead } = useUnreadBadges();
   const [peer, setPeer] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
   const [msgs, setMsgs] = useState<DmMsg[]>(() => getDmCache(peerId));
   const [loading, setLoading] = useState(() => getDmCache(peerId).length === 0);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    void markRead("dms");
+  }, [markRead, peerId]);
 
   useEffect(() => {
     if (!user) return;

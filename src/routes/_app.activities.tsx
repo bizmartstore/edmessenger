@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { FolderKanban, ChevronRight, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -19,8 +20,13 @@ interface Activity {
 
 function ActivitiesPage() {
   const { user } = useAuth();
+  const { markRead } = useUnreadBadges();
   const [items, setItems] = useState<Activity[]>([]);
   const [submitted, setSubmitted] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    void markRead("activities");
+  }, [markRead]);
 
   useEffect(() => {
     if (!user) return;

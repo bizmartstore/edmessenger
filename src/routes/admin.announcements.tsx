@@ -58,7 +58,7 @@ function AdminAnnouncements() {
         title: "New announcement",
         message: title.trim().slice(0, 80),
         url: "/",
-        audience: "all",
+        audience: "students",
       });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed");

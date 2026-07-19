@@ -16,6 +16,7 @@ import {
   type ClassMsg,
 } from "@/lib/chat-cache";
 import { sendPush } from "@/lib/onesignal";
+import { UnreadBadge, useUnreadBadges } from "@/hooks/useUnreadBadges";
 
 export const Route = createFileRoute("/_app/chat")({
   component: ChatPage,
@@ -56,6 +57,7 @@ async function loadClassroomMessages(): Promise<ClassMsg[]> {
 
 function ChatPage() {
   const { user, profile } = useAuth();
+  const { counts, markRead } = useUnreadBadges();
   const [tab, setTab] = useState<"class" | "dms">("class");
   const [messages, setMessages] = useState<ClassMsg[]>(() => getClassroomCache());
   const [loading, setLoading] = useState(() => getClassroomCache().length === 0);
@@ -63,6 +65,11 @@ function ChatPage() {
   const [peopleQuery, setPeopleQuery] = useState("");
   const [people, setPeople] = useState<{ id: string; full_name: string | null; avatar_url: string | null }[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (tab === "class") void markRead("classroom");
+    else void markRead("dms");
+  }, [tab, markRead]);
 
   const refreshClassroom = useCallback(async () => {
     try {
@@ -161,15 +168,17 @@ function ChatPage() {
       <div className="flex items-center gap-2 mb-3">
         <button
           onClick={() => setTab("class")}
-          className={`flex-1 py-2.5 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${tab === "class" ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground"}`}
+          className={`relative flex-1 py-2.5 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${tab === "class" ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground"}`}
         >
           <Users className="h-4 w-4" /> Classroom
+          {tab !== "class" && <UnreadBadge count={counts.classroom} className="top-1 right-2" />}
         </button>
         <button
           onClick={() => setTab("dms")}
-          className={`flex-1 py-2.5 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${tab === "dms" ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground"}`}
+          className={`relative flex-1 py-2.5 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${tab === "dms" ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground"}`}
         >
           <MessagesSquare className="h-4 w-4" /> Direct
+          {tab !== "dms" && <UnreadBadge count={counts.dms} className="top-1 right-2" />}
         </button>
       </div>
 
