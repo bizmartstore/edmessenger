@@ -10,8 +10,14 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
+import { Route as AdminStudentsRouteImport } from './routes/admin.students'
+import { Route as AdminQuizzesRouteImport } from './routes/admin.quizzes'
+import { Route as AdminLessonsRouteImport } from './routes/admin.lessons'
+import { Route as AdminAttendanceRouteImport } from './routes/admin.attendance'
 import { Route as AppQuizzesRouteImport } from './routes/_app.quizzes'
 import { Route as AppLessonsRouteImport } from './routes/_app.lessons'
 import { Route as AppChatRouteImport } from './routes/_app.chat'
@@ -24,14 +30,44 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AppRoute,
+} as any)
+const AdminStudentsRoute = AdminStudentsRouteImport.update({
+  id: '/students',
+  path: '/students',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminQuizzesRoute = AdminQuizzesRouteImport.update({
+  id: '/quizzes',
+  path: '/quizzes',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminLessonsRoute = AdminLessonsRouteImport.update({
+  id: '/lessons',
+  path: '/lessons',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAttendanceRoute = AdminAttendanceRouteImport.update({
+  id: '/attendance',
+  path: '/attendance',
+  getParentRoute: () => AdminRoute,
 } as any)
 const AppQuizzesRoute = AppQuizzesRouteImport.update({
   id: '/quizzes',
@@ -66,11 +102,17 @@ const AppDmPeerIdRoute = AppDmPeerIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
+  '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRoute
   '/attendance': typeof AppAttendanceRoute
   '/chat': typeof AppChatRoute
   '/lessons': typeof AppLessonsRoute
   '/quizzes': typeof AppQuizzesRouteWithChildren
+  '/admin/attendance': typeof AdminAttendanceRoute
+  '/admin/lessons': typeof AdminLessonsRoute
+  '/admin/quizzes': typeof AdminQuizzesRoute
+  '/admin/students': typeof AdminStudentsRoute
+  '/admin/': typeof AdminIndexRoute
   '/dm/$peerId': typeof AppDmPeerIdRoute
   '/quizzes/$id': typeof AppQuizzesIdRoute
 }
@@ -80,19 +122,30 @@ export interface FileRoutesByTo {
   '/chat': typeof AppChatRoute
   '/lessons': typeof AppLessonsRoute
   '/quizzes': typeof AppQuizzesRouteWithChildren
+  '/admin/attendance': typeof AdminAttendanceRoute
+  '/admin/lessons': typeof AdminLessonsRoute
+  '/admin/quizzes': typeof AdminQuizzesRoute
+  '/admin/students': typeof AdminStudentsRoute
   '/': typeof AppIndexRoute
+  '/admin': typeof AdminIndexRoute
   '/dm/$peerId': typeof AppDmPeerIdRoute
   '/quizzes/$id': typeof AppQuizzesIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
+  '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRoute
   '/_app/attendance': typeof AppAttendanceRoute
   '/_app/chat': typeof AppChatRoute
   '/_app/lessons': typeof AppLessonsRoute
   '/_app/quizzes': typeof AppQuizzesRouteWithChildren
+  '/admin/attendance': typeof AdminAttendanceRoute
+  '/admin/lessons': typeof AdminLessonsRoute
+  '/admin/quizzes': typeof AdminQuizzesRoute
+  '/admin/students': typeof AdminStudentsRoute
   '/_app/': typeof AppIndexRoute
+  '/admin/': typeof AdminIndexRoute
   '/_app/dm/$peerId': typeof AppDmPeerIdRoute
   '/_app/quizzes/$id': typeof AppQuizzesIdRoute
 }
@@ -100,11 +153,17 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin'
     | '/auth'
     | '/attendance'
     | '/chat'
     | '/lessons'
     | '/quizzes'
+    | '/admin/attendance'
+    | '/admin/lessons'
+    | '/admin/quizzes'
+    | '/admin/students'
+    | '/admin/'
     | '/dm/$peerId'
     | '/quizzes/$id'
   fileRoutesByTo: FileRoutesByTo
@@ -114,24 +173,36 @@ export interface FileRouteTypes {
     | '/chat'
     | '/lessons'
     | '/quizzes'
+    | '/admin/attendance'
+    | '/admin/lessons'
+    | '/admin/quizzes'
+    | '/admin/students'
     | '/'
+    | '/admin'
     | '/dm/$peerId'
     | '/quizzes/$id'
   id:
     | '__root__'
     | '/_app'
+    | '/admin'
     | '/auth'
     | '/_app/attendance'
     | '/_app/chat'
     | '/_app/lessons'
     | '/_app/quizzes'
+    | '/admin/attendance'
+    | '/admin/lessons'
+    | '/admin/quizzes'
+    | '/admin/students'
     | '/_app/'
+    | '/admin/'
     | '/_app/dm/$peerId'
     | '/_app/quizzes/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
+  AdminRoute: typeof AdminRouteWithChildren
   AuthRoute: typeof AuthRoute
 }
 
@@ -144,6 +215,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app': {
       id: '/_app'
       path: ''
@@ -151,12 +229,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/_app/': {
       id: '/_app/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/admin/students': {
+      id: '/admin/students'
+      path: '/students'
+      fullPath: '/admin/students'
+      preLoaderRoute: typeof AdminStudentsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/quizzes': {
+      id: '/admin/quizzes'
+      path: '/quizzes'
+      fullPath: '/admin/quizzes'
+      preLoaderRoute: typeof AdminQuizzesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/lessons': {
+      id: '/admin/lessons'
+      path: '/lessons'
+      fullPath: '/admin/lessons'
+      preLoaderRoute: typeof AdminLessonsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/attendance': {
+      id: '/admin/attendance'
+      path: '/attendance'
+      fullPath: '/admin/attendance'
+      preLoaderRoute: typeof AdminAttendanceRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/_app/quizzes': {
       id: '/_app/quizzes'
@@ -235,8 +348,27 @@ const AppRouteChildren: AppRouteChildren = {
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
+interface AdminRouteChildren {
+  AdminAttendanceRoute: typeof AdminAttendanceRoute
+  AdminLessonsRoute: typeof AdminLessonsRoute
+  AdminQuizzesRoute: typeof AdminQuizzesRoute
+  AdminStudentsRoute: typeof AdminStudentsRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminAttendanceRoute: AdminAttendanceRoute,
+  AdminLessonsRoute: AdminLessonsRoute,
+  AdminQuizzesRoute: AdminQuizzesRoute,
+  AdminStudentsRoute: AdminStudentsRoute,
+  AdminIndexRoute: AdminIndexRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
+  AdminRoute: AdminRouteWithChildren,
   AuthRoute: AuthRoute,
 }
 export const routeTree = rootRouteImport
