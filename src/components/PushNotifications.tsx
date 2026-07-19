@@ -1,22 +1,26 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { identifyOneSignalUser, initOneSignal, logoutOneSignal } from "@/lib/onesignal";
+import { identifyOneSignalUser, logoutOneSignal } from "@/lib/onesignal";
 import { PushEnableBanner } from "@/components/PushEnableBanner";
 
 export function PushNotifications() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, loading } = useAuth();
+  const wasSignedIn = useRef(false);
 
   useEffect(() => {
-    void initOneSignal().catch(() => {});
-  }, []);
+    if (loading) return;
 
-  useEffect(() => {
     if (!user) {
-      void logoutOneSignal();
+      if (wasSignedIn.current) {
+        wasSignedIn.current = false;
+        void logoutOneSignal();
+      }
       return;
     }
+
+    wasSignedIn.current = true;
     void identifyOneSignalUser(user.id, isAdmin ? "admin" : "student").catch(() => {});
-  }, [user, isAdmin]);
+  }, [user, isAdmin, loading]);
 
   return <PushEnableBanner />;
 }

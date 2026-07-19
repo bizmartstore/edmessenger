@@ -12,10 +12,26 @@ export interface PushPayload {
   audience: PushAudience;
 }
 
+const recentKeys = new Map<string, number>();
+
+function shouldSend(payload: PushPayload): boolean {
+  const key = JSON.stringify(payload);
+  const now = Date.now();
+  const prev = recentKeys.get(key);
+  if (prev && now - prev < 3000) return false;
+  recentKeys.set(key, now);
+  // prune
+  for (const [k, t] of recentKeys) {
+    if (now - t > 10000) recentKeys.delete(k);
+  }
+  return true;
+}
+
 export function sendPushNotification(payload: PushPayload): void {
   if (typeof window === "undefined") return;
   const audience = payload.audience;
   if (audience.type === "external_ids" && audience.externalIds.length === 0) return;
+  if (!shouldSend(payload)) return;
 
   void (async () => {
     try {

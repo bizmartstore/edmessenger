@@ -157,6 +157,24 @@ async function fetchProfileIds(token: string): Promise<string[]> {
   return rows.map((r) => r.id).filter((id): id is string => Boolean(id));
 }
 
+
+async function fetchRoleUserIds(token: string, role: "admin" | "student"): Promise<string[]> {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/user_roles?select=user_id&role=eq.${role}`,
+    {
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to load roles (${res.status})`);
+  }
+  const rows = (await res.json()) as Array<{ user_id?: string }>;
+  return [...new Set(rows.map((r) => r.user_id).filter((id): id is string => Boolean(id)))];
+}
+
 async function sendOneSignal(
   restKey: string,
   appId: string,
@@ -236,15 +254,32 @@ async function handlePushNotify(request: Request, envBag: EnvBag): Promise<Respo
     base.app_url = abs;
   }
 
+  base.collapse_id = `edm-${audience.type}-${title}`.replace(/\s+/g, "-").slice(0, 64);
+  base.web_push_topic = String(base.collapse_id);
+
   try {
     if (audience.type === "role") {
       if (audience.role !== "admin" && audience.role !== "student") {
         return jsonResponse({ ok: false, error: "Invalid role" }, 400, cors);
       }
-      const onesignal = await sendOneSignal(restKey, appId, base, {
-        filters: [{ field: "tag", key: "role", relation: "=", value: audience.role }],
-      });
-      return jsonResponse({ ok: true, onesignal }, 200, cors);
+      const ids = await fetchRoleUserIds(token, audience.role);
+      if (!ids.length) {
+        return jsonResponse({ ok: true, recipients: 0 }, 200, cors);
+      }
+      const batches = chunkIds(ids, 2000);
+      const results: unknown[] = [];
+      for (const batch of batches) {
+        results.push(
+          await sendOneSignal(restKey, appId, base, {
+            include_aliases: { external_id: batch },
+          }),
+        );
+      }
+      return jsonResponse(
+        { ok: true, onesignal: results.length === 1 ? results[0] : results },
+        200,
+        cors,
+      );
     }
 
     let externalIds: string[] = [];
