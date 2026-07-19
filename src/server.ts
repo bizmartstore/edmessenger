@@ -88,7 +88,7 @@ type NotifyBody = {
   message?: string;
   url?: string;
   origin?: string;
-  audience?: "students" | "admins" | "users";
+  audience?: "students" | "admins" | "users" | "all";
   userIds?: string[];
   excludeUserIds?: string[];
 };
@@ -100,6 +100,7 @@ async function handleNotify(request: Request, env: EnvBag): Promise<Response> {
 
   const restKey = (env.ONESIGNAL_REST_API_KEY ?? "").trim();
   if (!restKey) {
+    console.error("[notify] ONESIGNAL_REST_API_KEY is not set — pushes are skipped");
     return new Response(
       JSON.stringify({
         ok: false,
@@ -149,8 +150,15 @@ async function handleNotify(request: Request, env: EnvBag): Promise<Response> {
     payload.include_aliases = { external_id: ids };
   } else if (body.audience === "admins") {
     payload.filters = [{ field: "tag", key: "role", relation: "=", value: "admin" }];
+  } else if (body.audience === "all") {
+    // Students OR admins (classroom chat, etc.)
+    payload.filters = [
+      { field: "tag", key: "role", relation: "=", value: "student" },
+      { operator: "OR" },
+      { field: "tag", key: "role", relation: "=", value: "admin" },
+    ];
   } else {
-    // Default: students (announcements, classroom, quizzes, activities, lessons)
+    // Default: students (announcements, quizzes, activities, lessons)
     payload.filters = [{ field: "tag", key: "role", relation: "=", value: "student" }];
   }
 
@@ -163,6 +171,9 @@ async function handleNotify(request: Request, env: EnvBag): Promise<Response> {
     body: JSON.stringify(payload),
   });
   const text = await res.text();
+  if (!res.ok) {
+    console.error("[notify] OneSignal error", res.status, text.slice(0, 500));
+  }
   return new Response(text, {
     status: res.status,
     headers: { "content-type": "application/json; charset=utf-8" },

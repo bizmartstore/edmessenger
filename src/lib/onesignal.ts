@@ -155,6 +155,18 @@ export async function identifyOneSignalUser(userId: string, role: "admin" | "stu
   }
 }
 
+/** Force re-login + tags after a successful subscribe (links push token to external_id + role). */
+export async function bindPushIdentity(userId: string, role: "admin" | "student") {
+  await initOneSignal();
+  try {
+    await OneSignal.login(userId);
+    OneSignal.User.addTags({ role, app: "edmessenger" });
+    lastIdentified = `${userId}:${role}`;
+  } catch (e) {
+    console.warn("[onesignal] bindPushIdentity failed", e);
+  }
+}
+
 export async function logoutOneSignal() {
   lastIdentified = null;
   promptStarted = false;
@@ -188,7 +200,7 @@ async function optInAndVerify(): Promise<boolean> {
  * Show the allow-notifications prompt as soon as the app opens.
  * Uses OneSignal Slidedown (then browser Allow), then opts in the subscription.
  */
-export async function ensurePushSubscription(): Promise<boolean> {
+export async function ensurePushSubscription(opts?: { forcePrompt?: boolean }): Promise<boolean> {
   await initOneSignal();
 
   try {
@@ -212,7 +224,7 @@ export async function ensurePushSubscription(): Promise<boolean> {
       return false;
     }
 
-    if (promptStarted) return pushSubscriptionReady();
+    if (promptStarted && !opts?.forcePrompt) return pushSubscriptionReady();
     promptStarted = true;
 
     try {
@@ -239,7 +251,12 @@ export async function isPushEnabled(): Promise<boolean> {
   await initOneSignal();
   try {
     if (pushSubscriptionReady()) return true;
-    if (typeof Notification !== "undefined" && Notification.permission === "granted") return true;
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      return Boolean(
+        (OneSignal.User.PushSubscription as { optedIn?: boolean }).optedIn ||
+          OneSignal.Notifications.permission,
+      );
+    }
     return Boolean(OneSignal.Notifications.permission);
   } catch {
     return false;
@@ -250,7 +267,7 @@ export type NotifyPayload = {
   title: string;
   message: string;
   url?: string;
-  audience?: "students" | "admins" | "users";
+  audience?: "students" | "admins" | "users" | "all";
   userIds?: string[];
   excludeUserIds?: string[];
 };
@@ -268,19 +285,23 @@ export async function sendPush(payload: NotifyPayload): Promise<{ ok: boolean; d
       body: JSON.stringify({ ...payload, url: absoluteUrl, origin }),
     });
     const text = await res.text();
-    let json: { id?: string; skipped?: boolean; reason?: string } | null = null;
+    let json: { id?: string; skipped?: boolean; reason?: string; errors?: unknown } | null = null;
     try {
       json = JSON.parse(text) as typeof json;
     } catch {
       /* ignore */
     }
     if (!res.ok) {
-      console.error("[push] error", res.status, text);
+      console.error("[push] OneSignal rejected", res.status, text);
       return { ok: false, detail: text.slice(0, 200) };
     }
-    if (json?.skipped) return { ok: false, detail: json.reason };
+    if (json?.skipped) {
+      console.error("[push] skipped:", json.reason);
+      return { ok: false, detail: json.reason };
+    }
     if (json && "id" in json && json.id === "") {
-      return { ok: false, detail: "No subscribed recipients matched" };
+      console.error("[push] no matching subscribed recipients", text);
+      return { ok: false, detail: "No subscribed recipients matched — recipient may not have allowed notifications" };
     }
     return { ok: true };
   } catch (e) {

@@ -185,7 +185,7 @@ function ChatPage() {
       title: "New classroom message",
       message: `${profile?.full_name ?? "Someone"}: ${text.slice(0, 60) || "Sent an attachment"}`,
       url: "/chat",
-      audience: "students",
+      audience: "all",
     });
   }
 
