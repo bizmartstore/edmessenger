@@ -36,9 +36,6 @@ export function PushEnableBanner() {
       return;
     }
 
-    // Show immediately so users see the prompt without waiting for SDK init.
-    setVisible(true);
-
     let cancelled = false;
 
     async function refresh() {

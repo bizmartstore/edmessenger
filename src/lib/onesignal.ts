@@ -71,11 +71,7 @@ export function initOneSignal(): Promise<OneSignalSDK> {
           serviceWorkerParam: { scope: "/push/" },
           notifyButton: { enable: false },
           welcomeNotification: { disable: true },
-          promptOptions: {
-            slidedown: {
-              prompts: [{ type: "push", autoPrompt: false }],
-            },
-          },
+          autoResubscribe: true,
         });
         resolve(OneSignal);
       } catch (err) {
@@ -85,6 +81,16 @@ export function initOneSignal(): Promise<OneSignalSDK> {
     });
   });
   return initPromise;
+}
+
+/** Init SDK and identify the user in one step to avoid orphan anonymous subscriptions. */
+export async function setupOneSignalForUser(
+  userId: string,
+  role: "admin" | "student",
+): Promise<OneSignalSDK> {
+  const OneSignal = await initOneSignal();
+  await identifyOneSignalUser(userId, role);
+  return OneSignal;
 }
 
 export async function identifyOneSignalUser(
