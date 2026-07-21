@@ -18,7 +18,7 @@ import {
 import { getCachedProfile, rememberProfile, rememberProfiles } from "@/lib/profile-cache";
 import { UnreadBadge, useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { useLiveReload } from "@/hooks/useLiveReload";
-import { notifyAllExcept } from "@/lib/push";
+import { notifyRoleExcept } from "@/lib/push";
 
 export const Route = createFileRoute("/_app/chat")({
   component: ChatPage,
@@ -180,7 +180,7 @@ function ChatPage() {
       });
       setMessages([...next]);
       const preview = text.trim() || (attachments.length ? "Sent an attachment" : "New message");
-      notifyAllExcept([user.id], profile?.full_name ?? "Classroom", preview, "/chat");
+      notifyRoleExcept("student", [user.id], profile?.full_name ?? "Classroom", preview, "/chat");
     }
     void supabase.rpc("prune_classroom_messages");
   }

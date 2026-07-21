@@ -7,11 +7,11 @@ const DISMISS_KEY = "edmessenger.pushDismissed";
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
 function isDismissedRecently(): boolean {
+  if (typeof window === "undefined") return false;
   const raw = localStorage.getItem(DISMISS_KEY);
   if (!raw) return false;
   const ts = Number(raw);
   if (!Number.isFinite(ts)) {
-    // legacy "1" flag — treat as just dismissed
     if (raw === "1") {
       localStorage.setItem(DISMISS_KEY, String(Date.now()));
       return true;
@@ -35,6 +35,9 @@ export function PushEnableBanner() {
       setVisible(false);
       return;
     }
+
+    // Show immediately so users see the prompt without waiting for SDK init.
+    setVisible(true);
 
     let cancelled = false;
 

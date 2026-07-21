@@ -120,6 +120,7 @@ function chunkIds<T>(items: T[], size: number): T[][] {
 type PushAudience =
   | { type: "external_ids"; externalIds: string[] }
   | { type: "role"; role: "admin" | "student" }
+  | { type: "role_except"; role: "admin" | "student"; excludeIds: string[] }
   | { type: "all_except"; excludeIds: string[] };
 
 type PushBody = {
@@ -159,20 +160,21 @@ async function fetchProfileIds(token: string): Promise<string[]> {
 
 
 async function fetchRoleUserIds(token: string, role: "admin" | "student"): Promise<string[]> {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/user_roles?select=user_id&role=eq.${role}`,
-    {
-      headers: {
-        apikey: SUPABASE_PUBLISHABLE_KEY,
-        Authorization: `Bearer ${token}`,
-      },
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_user_ids_by_role`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${token}`,
+      "content-type": "application/json",
     },
-  );
+    body: JSON.stringify({ _role: role }),
+  });
   if (!res.ok) {
     throw new Error(`Failed to load roles (${res.status})`);
   }
-  const rows = (await res.json()) as Array<{ user_id?: string }>;
-  return [...new Set(rows.map((r) => r.user_id).filter((id): id is string => Boolean(id)))];
+  const rows = (await res.json()) as unknown;
+  const ids = Array.isArray(rows) ? rows : [];
+  return [...new Set(ids.filter((id): id is string => typeof id === "string" && Boolean(id)))];
 }
 
 async function sendOneSignal(
@@ -254,36 +256,24 @@ async function handlePushNotify(request: Request, envBag: EnvBag): Promise<Respo
     base.app_url = abs;
   }
 
-  base.collapse_id = `edm-${audience.type}-${title}`.replace(/\s+/g, "-").slice(0, 64);
+  const dedupeSeed = `${audience.type}-${title}-${body}`.replace(/\s+/g, "-");
+  base.collapse_id = `edm-${dedupeSeed}`.slice(0, 64);
   base.web_push_topic = String(base.collapse_id);
 
   try {
-    if (audience.type === "role") {
+    let externalIds: string[] = [];
+    if (audience.type === "role" || audience.type === "role_except") {
       if (audience.role !== "admin" && audience.role !== "student") {
         return jsonResponse({ ok: false, error: "Invalid role" }, 400, cors);
       }
       const ids = await fetchRoleUserIds(token, audience.role);
-      if (!ids.length) {
-        return jsonResponse({ ok: true, recipients: 0 }, 200, cors);
+      if (audience.type === "role_except") {
+        const exclude = new Set((audience.excludeIds ?? []).filter(Boolean));
+        externalIds = ids.filter((id) => !exclude.has(id));
+      } else {
+        externalIds = ids;
       }
-      const batches = chunkIds(ids, 2000);
-      const results: unknown[] = [];
-      for (const batch of batches) {
-        results.push(
-          await sendOneSignal(restKey, appId, base, {
-            include_aliases: { external_id: batch },
-          }),
-        );
-      }
-      return jsonResponse(
-        { ok: true, onesignal: results.length === 1 ? results[0] : results },
-        200,
-        cors,
-      );
-    }
-
-    let externalIds: string[] = [];
-    if (audience.type === "external_ids") {
+    } else if (audience.type === "external_ids") {
       externalIds = [...new Set((audience.externalIds ?? []).filter(Boolean))];
     } else if (audience.type === "all_except") {
       const exclude = new Set((audience.excludeIds ?? []).filter(Boolean));

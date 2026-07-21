@@ -3,6 +3,7 @@
 export type PushAudience =
   | { type: "external_ids"; externalIds: string[] }
   | { type: "role"; role: "admin" | "student" }
+  | { type: "role_except"; role: "admin" | "student"; excludeIds: string[] }
   | { type: "all_except"; excludeIds: string[] };
 
 export interface PushPayload {
@@ -79,6 +80,21 @@ export function notifyRole(role: "admin" | "student", title: string, body: strin
     body,
     url,
     audience: { type: "role", role },
+  });
+}
+
+export function notifyRoleExcept(
+  role: "admin" | "student",
+  excludeIds: string[],
+  title: string,
+  body: string,
+  url?: string,
+): void {
+  sendPushNotification({
+    title,
+    body,
+    url,
+    audience: { type: "role_except", role, excludeIds },
   });
 }
 
