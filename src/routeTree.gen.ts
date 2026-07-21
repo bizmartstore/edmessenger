@@ -9,31 +9,30 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AppRouteImport } from './routes/_app'
-import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
-import { Route as AdminStudentsRouteImport } from './routes/admin.students'
-import { Route as AdminQuizzesRouteImport } from './routes/admin.quizzes'
-import { Route as AdminLessonsRouteImport } from './routes/admin.lessons'
-import { Route as AdminBannersRouteImport } from './routes/admin.banners'
-import { Route as AdminAttendanceRouteImport } from './routes/admin.attendance'
-import { Route as AdminAnnouncementsRouteImport } from './routes/admin.announcements'
-import { Route as AdminActivitiesRouteImport } from './routes/admin.activities'
-import { Route as AppQuizzesRouteImport } from './routes/_app.quizzes'
-import { Route as AppProfileRouteImport } from './routes/_app.profile'
-import { Route as AppLessonsRouteImport } from './routes/_app.lessons'
-import { Route as AppChatRouteImport } from './routes/_app.chat'
-import { Route as AppAttendanceRouteImport } from './routes/_app.attendance'
 import { Route as AppActivitiesRouteImport } from './routes/_app.activities'
-import { Route as AppQuizzesIdRouteImport } from './routes/_app.quizzes.$id'
-import { Route as AppDmPeerIdRouteImport } from './routes/_app.dm.$peerId'
+import { Route as AppAttendanceRouteImport } from './routes/_app.attendance'
+import { Route as AppChatRouteImport } from './routes/_app.chat'
+import { Route as AppLessonsRouteImport } from './routes/_app.lessons'
+import { Route as AppProfileRouteImport } from './routes/_app.profile'
+import { Route as AppQuizzesRouteImport } from './routes/_app.quizzes'
+import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminActivitiesRouteImport } from './routes/admin.activities'
+import { Route as AdminAnnouncementsRouteImport } from './routes/admin.announcements'
+import { Route as AdminAttendanceRouteImport } from './routes/admin.attendance'
+import { Route as AdminBannersRouteImport } from './routes/admin.banners'
+import { Route as AdminLessonsRouteImport } from './routes/admin.lessons'
+import { Route as AdminQuizzesRouteImport } from './routes/admin.quizzes'
+import { Route as AdminStudentsRouteImport } from './routes/admin.students'
 import { Route as AppActivitiesIdRouteImport } from './routes/_app.activities.$id'
+import { Route as AppDmPeerIdRouteImport } from './routes/_app.dm.$peerId'
+import { Route as AppQuizzesIdRouteImport } from './routes/_app.quizzes.$id'
 
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -41,78 +40,14 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppRoute = AppRouteImport.update({
-  id: '/_app',
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
-} as any)
-const AdminIndexRoute = AdminIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AdminRoute,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AppRoute,
-} as any)
-const AdminStudentsRoute = AdminStudentsRouteImport.update({
-  id: '/students',
-  path: '/students',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminQuizzesRoute = AdminQuizzesRouteImport.update({
-  id: '/quizzes',
-  path: '/quizzes',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminLessonsRoute = AdminLessonsRouteImport.update({
-  id: '/lessons',
-  path: '/lessons',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminBannersRoute = AdminBannersRouteImport.update({
-  id: '/banners',
-  path: '/banners',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminAttendanceRoute = AdminAttendanceRouteImport.update({
-  id: '/attendance',
-  path: '/attendance',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminAnnouncementsRoute = AdminAnnouncementsRouteImport.update({
-  id: '/announcements',
-  path: '/announcements',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminActivitiesRoute = AdminActivitiesRouteImport.update({
-  id: '/activities',
-  path: '/activities',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AppQuizzesRoute = AppQuizzesRouteImport.update({
-  id: '/quizzes',
-  path: '/quizzes',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppProfileRoute = AppProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppLessonsRoute = AppLessonsRouteImport.update({
-  id: '/lessons',
-  path: '/lessons',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppChatRoute = AppChatRouteImport.update({
-  id: '/chat',
-  path: '/chat',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppAttendanceRoute = AppAttendanceRouteImport.update({
-  id: '/attendance',
-  path: '/attendance',
   getParentRoute: () => AppRoute,
 } as any)
 const AppActivitiesRoute = AppActivitiesRouteImport.update({
@@ -120,20 +55,85 @@ const AppActivitiesRoute = AppActivitiesRouteImport.update({
   path: '/activities',
   getParentRoute: () => AppRoute,
 } as any)
-const AppQuizzesIdRoute = AppQuizzesIdRouteImport.update({
+const AppAttendanceRoute = AppAttendanceRouteImport.update({
+  id: '/attendance',
+  path: '/attendance',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppChatRoute = AppChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLessonsRoute = AppLessonsRouteImport.update({
+  id: '/lessons',
+  path: '/lessons',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppProfileRoute = AppProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppQuizzesRoute = AppQuizzesRouteImport.update({
+  id: '/quizzes',
+  path: '/quizzes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminActivitiesRoute = AdminActivitiesRouteImport.update({
+  id: '/activities',
+  path: '/activities',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAnnouncementsRoute = AdminAnnouncementsRouteImport.update({
+  id: '/announcements',
+  path: '/announcements',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAttendanceRoute = AdminAttendanceRouteImport.update({
+  id: '/attendance',
+  path: '/attendance',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminBannersRoute = AdminBannersRouteImport.update({
+  id: '/banners',
+  path: '/banners',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminLessonsRoute = AdminLessonsRouteImport.update({
+  id: '/lessons',
+  path: '/lessons',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminQuizzesRoute = AdminQuizzesRouteImport.update({
+  id: '/quizzes',
+  path: '/quizzes',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminStudentsRoute = AdminStudentsRouteImport.update({
+  id: '/students',
+  path: '/students',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AppActivitiesIdRoute = AppActivitiesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
-  getParentRoute: () => AppQuizzesRoute,
+  getParentRoute: () => AppActivitiesRoute,
 } as any)
 const AppDmPeerIdRoute = AppDmPeerIdRouteImport.update({
   id: '/dm/$peerId',
   path: '/dm/$peerId',
   getParentRoute: () => AppRoute,
 } as any)
-const AppActivitiesIdRoute = AppActivitiesIdRouteImport.update({
+const AppQuizzesIdRoute = AppQuizzesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
-  getParentRoute: () => AppActivitiesRoute,
+  getParentRoute: () => AppQuizzesRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -280,11 +280,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -294,109 +294,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app': {
-      id: '/_app'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AppRouteImport
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/admin/': {
-      id: '/admin/'
-      path: '/'
-      fullPath: '/admin/'
-      preLoaderRoute: typeof AdminIndexRouteImport
-      parentRoute: typeof AdminRoute
     }
     '/_app/': {
       id: '/_app/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AppIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/admin/students': {
-      id: '/admin/students'
-      path: '/students'
-      fullPath: '/admin/students'
-      preLoaderRoute: typeof AdminStudentsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/quizzes': {
-      id: '/admin/quizzes'
-      path: '/quizzes'
-      fullPath: '/admin/quizzes'
-      preLoaderRoute: typeof AdminQuizzesRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/lessons': {
-      id: '/admin/lessons'
-      path: '/lessons'
-      fullPath: '/admin/lessons'
-      preLoaderRoute: typeof AdminLessonsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/banners': {
-      id: '/admin/banners'
-      path: '/banners'
-      fullPath: '/admin/banners'
-      preLoaderRoute: typeof AdminBannersRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/attendance': {
-      id: '/admin/attendance'
-      path: '/attendance'
-      fullPath: '/admin/attendance'
-      preLoaderRoute: typeof AdminAttendanceRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/announcements': {
-      id: '/admin/announcements'
-      path: '/announcements'
-      fullPath: '/admin/announcements'
-      preLoaderRoute: typeof AdminAnnouncementsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/activities': {
-      id: '/admin/activities'
-      path: '/activities'
-      fullPath: '/admin/activities'
-      preLoaderRoute: typeof AdminActivitiesRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/_app/quizzes': {
-      id: '/_app/quizzes'
-      path: '/quizzes'
-      fullPath: '/quizzes'
-      preLoaderRoute: typeof AppQuizzesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/profile': {
-      id: '/_app/profile'
-      path: '/profile'
-      fullPath: '/profile'
-      preLoaderRoute: typeof AppProfileRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/lessons': {
-      id: '/_app/lessons'
-      path: '/lessons'
-      fullPath: '/lessons'
-      preLoaderRoute: typeof AppLessonsRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/chat': {
-      id: '/_app/chat'
-      path: '/chat'
-      fullPath: '/chat'
-      preLoaderRoute: typeof AppChatRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/attendance': {
-      id: '/_app/attendance'
-      path: '/attendance'
-      fullPath: '/attendance'
-      preLoaderRoute: typeof AppAttendanceRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/activities': {
@@ -406,12 +315,103 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppActivitiesRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/quizzes/$id': {
-      id: '/_app/quizzes/$id'
+    '/_app/attendance': {
+      id: '/_app/attendance'
+      path: '/attendance'
+      fullPath: '/attendance'
+      preLoaderRoute: typeof AppAttendanceRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/chat': {
+      id: '/_app/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof AppChatRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/lessons': {
+      id: '/_app/lessons'
+      path: '/lessons'
+      fullPath: '/lessons'
+      preLoaderRoute: typeof AppLessonsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/profile': {
+      id: '/_app/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AppProfileRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/quizzes': {
+      id: '/_app/quizzes'
+      path: '/quizzes'
+      fullPath: '/quizzes'
+      preLoaderRoute: typeof AppQuizzesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/activities': {
+      id: '/admin/activities'
+      path: '/activities'
+      fullPath: '/admin/activities'
+      preLoaderRoute: typeof AdminActivitiesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/announcements': {
+      id: '/admin/announcements'
+      path: '/announcements'
+      fullPath: '/admin/announcements'
+      preLoaderRoute: typeof AdminAnnouncementsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/attendance': {
+      id: '/admin/attendance'
+      path: '/attendance'
+      fullPath: '/admin/attendance'
+      preLoaderRoute: typeof AdminAttendanceRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/banners': {
+      id: '/admin/banners'
+      path: '/banners'
+      fullPath: '/admin/banners'
+      preLoaderRoute: typeof AdminBannersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/lessons': {
+      id: '/admin/lessons'
+      path: '/lessons'
+      fullPath: '/admin/lessons'
+      preLoaderRoute: typeof AdminLessonsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/quizzes': {
+      id: '/admin/quizzes'
+      path: '/quizzes'
+      fullPath: '/admin/quizzes'
+      preLoaderRoute: typeof AdminQuizzesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/students': {
+      id: '/admin/students'
+      path: '/students'
+      fullPath: '/admin/students'
+      preLoaderRoute: typeof AdminStudentsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/_app/activities/$id': {
+      id: '/_app/activities/$id'
       path: '/$id'
-      fullPath: '/quizzes/$id'
-      preLoaderRoute: typeof AppQuizzesIdRouteImport
-      parentRoute: typeof AppQuizzesRoute
+      fullPath: '/activities/$id'
+      preLoaderRoute: typeof AppActivitiesIdRouteImport
+      parentRoute: typeof AppActivitiesRoute
     }
     '/_app/dm/$peerId': {
       id: '/_app/dm/$peerId'
@@ -420,12 +420,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDmPeerIdRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/activities/$id': {
-      id: '/_app/activities/$id'
+    '/_app/quizzes/$id': {
+      id: '/_app/quizzes/$id'
       path: '/$id'
-      fullPath: '/activities/$id'
-      preLoaderRoute: typeof AppActivitiesIdRouteImport
-      parentRoute: typeof AppActivitiesRoute
+      fullPath: '/quizzes/$id'
+      preLoaderRoute: typeof AppQuizzesIdRouteImport
+      parentRoute: typeof AppQuizzesRoute
     }
   }
 }
@@ -510,13 +510,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
