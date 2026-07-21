@@ -206,6 +206,8 @@ function ProfilePage() {
           <Save className="h-4 w-4" /> {busy ? "Saving…" : "Save profile"}
         </button>
       </div>
+      {user && <NotificationStatusCard userId={user.id} />}
+
 
       <section className="mt-6">
         <div className="flex items-center gap-2 mb-3">
