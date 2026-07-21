@@ -71,11 +71,6 @@ export function initOneSignal(): Promise<OneSignalSDK> {
           serviceWorkerParam: { scope: "/push/" },
           notifyButton: { enable: false },
           welcomeNotification: { disable: true },
-          promptOptions: {
-            slidedown: {
-              prompts: [{ type: "push", autoPrompt: false }],
-            },
-          },
         });
         resolve(OneSignal);
       } catch (err) {
