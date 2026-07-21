@@ -132,6 +132,63 @@ export async function isPushOptedIn(): Promise<boolean> {
   }
 }
 
+export type PushStatus = {
+  supported: boolean;
+  permission: NotificationPermission | "unsupported";
+  optedIn: boolean;
+  isIOS: boolean;
+  isStandalone: boolean;
+  iosNeedsInstall: boolean;
+};
+
+export function getEnvPushInfo(): { supported: boolean; isIOS: boolean; isStandalone: boolean } {
+  if (typeof window === "undefined") {
+    return { supported: false, isIOS: false, isStandalone: false };
+  }
+  const ua = window.navigator.userAgent || "";
+  const isIOS = /iPad|iPhone|iPod/.test(ua) && !("MSStream" in window);
+  const standaloneNav = (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+  const isStandalone =
+    standaloneNav || window.matchMedia?.("(display-mode: standalone)")?.matches === true;
+  const supported =
+    "Notification" in window &&
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    (!isIOS || isStandalone);
+  return { supported, isIOS, isStandalone };
+}
+
+export async function getPushStatus(): Promise<PushStatus> {
+  const env = getEnvPushInfo();
+  if (!env.supported) {
+    return {
+      supported: false,
+      permission: "unsupported",
+      optedIn: false,
+      isIOS: env.isIOS,
+      isStandalone: env.isStandalone,
+      iosNeedsInstall: env.isIOS && !env.isStandalone,
+    };
+  }
+  const permission: NotificationPermission =
+    typeof Notification !== "undefined" ? Notification.permission : "default";
+  let optedIn = false;
+  try {
+    const OneSignal = await initOneSignal();
+    optedIn = Boolean(OneSignal.User.PushSubscription.optedIn);
+  } catch {
+    // ignore
+  }
+  return {
+    supported: true,
+    permission,
+    optedIn,
+    isIOS: env.isIOS,
+    isStandalone: env.isStandalone,
+    iosNeedsInstall: false,
+  };
+}
+
 export async function requestPushPermission(): Promise<boolean> {
   const OneSignal = await initOneSignal();
   if (OneSignal.User.PushSubscription.optedIn) return true;
