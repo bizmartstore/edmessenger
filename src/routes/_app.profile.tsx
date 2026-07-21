@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { uploadToBucket, humanSize } from "@/lib/upload";
 import { toast } from "sonner";
 import { ArrowLeft, Camera, CheckCircle2, ClipboardList, FolderKanban, Save } from "lucide-react";
+import { NotificationStatusCard } from "@/components/NotificationStatusCard";
 import { formatDistanceToNow } from "date-fns";
 
 export const Route = createFileRoute("/_app/profile")({
@@ -205,6 +206,8 @@ function ProfilePage() {
           <Save className="h-4 w-4" /> {busy ? "Saving…" : "Save profile"}
         </button>
       </div>
+      {user && <NotificationStatusCard userId={user.id} />}
+
 
       <section className="mt-6">
         <div className="flex items-center gap-2 mb-3">
