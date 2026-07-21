@@ -41,7 +41,7 @@ function AuthPage() {
         <img
           src="/logo.png"
           alt="EdMessenger"
-          className="w-28 h-28 rounded-full shadow-glow mb-6 animate-pop object-cover bg-white"
+          className="w-20 h-20 rounded-full shadow-glow mb-6 animate-pop object-contain bg-white p-1.5"
         />
         <h1 className="text-4xl font-extrabold tracking-tight text-center animate-fade-up">
           Welcome to{" "}
