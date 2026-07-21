@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { uploadToBucket, humanSize } from "@/lib/upload";
 import { toast } from "sonner";
 import { ArrowLeft, Camera, CheckCircle2, ClipboardList, FolderKanban, Save } from "lucide-react";
+import { NotificationStatusCard } from "@/components/NotificationStatusCard";
 import { formatDistanceToNow } from "date-fns";
 
 export const Route = createFileRoute("/_app/profile")({
