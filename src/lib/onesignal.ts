@@ -52,6 +52,20 @@ function withSdk(fn: (OneSignal: OneSignalSDK) => void | Promise<void>): void {
   window.OneSignalDeferred.push(fn);
 }
 
+async function removeLegacyPushWorker(): Promise<void> {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(
+      registrations
+        .filter((registration) => new URL(registration.scope).pathname === "/push/")
+        .map((registration) => registration.unregister()),
+    );
+  } catch {
+    // A stale registration is harmless if the browser does not allow cleanup.
+  }
+}
+
 export function initOneSignal(): Promise<OneSignalSDK> {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("OneSignal is browser-only"));
@@ -62,6 +76,7 @@ export function initOneSignal(): Promise<OneSignalSDK> {
   initPromise = new Promise((resolve, reject) => {
     withSdk(async (OneSignal) => {
       try {
+        await removeLegacyPushWorker();
         await OneSignal.init({
           appId: ONESIGNAL_APP_ID,
           allowLocalhostAsSecureOrigin: true,
