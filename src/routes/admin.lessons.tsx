@@ -6,6 +6,7 @@ import { uploadToBucket, humanSize } from "@/lib/upload";
 import { toast } from "sonner";
 import { Upload, Trash2, FileText } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { notifyRole } from "@/lib/push";
 
 export const Route = createFileRoute("/admin/lessons")({
   component: AdminLessons,
@@ -37,6 +38,7 @@ function AdminLessons() {
         title, description: desc || null, file_url: up.url, file_name: up.name, file_size: up.size, uploaded_by: user.id,
       });
       if (error) throw error;
+      notifyRole("student", "New lesson", title.trim(), "/lessons");
       setTitle(""); setDesc(""); setFile(null); if (fileRef.current) fileRef.current.value = "";
       toast.success("Lesson uploaded");
       load();

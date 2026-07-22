@@ -7,6 +7,7 @@ import {
   setStoredAdminViewMode,
   type AdminViewMode,
 } from "@/lib/admin";
+import { notifyRole } from "@/lib/push";
 
 export interface Profile {
   id: string;
@@ -83,6 +84,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const admin = Boolean(role) || isPrimaryAdminEmail(user.email);
     setIsAdmin(admin);
     if (isPrimaryAdminEmail(user.email)) setIsAdmin(true);
+
+    // Claim the first app visit atomically using the profile timestamps. This
+    // avoids duplicate admin pushes if auth state fires twice or two tabs open.
+    if (!admin && p?.created_at && p.updated_at === p.created_at) {
+      const createdAt = new Date(p.created_at).getTime();
+      if (Date.now() - createdAt < 10 * 60 * 1000) {
+        const claimedAt = new Date().toISOString();
+        const { data: claimed } = await supabase
+          .from("profiles")
+          .update({ updated_at: claimedAt })
+          .eq("id", user.id)
+          .eq("updated_at", p.updated_at)
+          .select("id")
+          .maybeSingle();
+        if (claimed) {
+          notifyRole(
+            "admin",
+            "New student joined",
+            `${p.full_name ?? user.email ?? "A new student"} signed in to EdMessenger`,
+            "/admin/students",
+          );
+          p = { ...p, updated_at: claimedAt };
+          setProfile(p);
+        }
+      }
+    }
   }, []);
 
   const refresh = useCallback(async () => {

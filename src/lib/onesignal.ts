@@ -16,7 +16,6 @@ type OneSignalSDK = {
   logout: () => Promise<void>;
   User: {
     PushSubscription: PushSubscriptionAPI;
-    addTags: (tags: Record<string, string>) => void;
   };
   Notifications: {
     permission: boolean | "default" | "granted" | "denied";
@@ -36,7 +35,6 @@ declare global {
 
 let initPromise: Promise<OneSignalSDK> | null = null;
 let identifiedUserId: string | null = null;
-let identifiedRole: "admin" | "student" | null = null;
 
 function ensureScript(): void {
   if (typeof document === "undefined") return;
@@ -67,11 +65,22 @@ export function initOneSignal(): Promise<OneSignalSDK> {
         await OneSignal.init({
           appId: ONESIGNAL_APP_ID,
           allowLocalhostAsSecureOrigin: true,
-          serviceWorkerPath: "push/OneSignalSDKWorker.js",
-          serviceWorkerParam: { scope: "/push/" },
+          serviceWorkerPath: "/OneSignalSDKWorker.js",
+          serviceWorkerParam: { scope: "/" },
           notifyButton: { enable: false },
           welcomeNotification: { disable: true },
           autoResubscribe: true,
+          promptOptions: {
+            slidedown: {
+              prompts: [
+                {
+                  type: "push",
+                  autoPrompt: true,
+                  delay: { pageViews: 1, timeDelay: 1 },
+                },
+              ],
+            },
+          },
         });
         resolve(OneSignal);
       } catch (err) {
@@ -95,33 +104,23 @@ export async function setupOneSignalForUser(
 
 export async function identifyOneSignalUser(
   userId: string,
-  role: "admin" | "student",
+  _role: "admin" | "student",
 ): Promise<void> {
   const OneSignal = await initOneSignal();
 
-  if (identifiedUserId === userId) {
-    if (identifiedRole !== role) {
-      OneSignal.User.addTags({ role });
-      identifiedRole = role;
-    }
-    return;
-  }
+  if (identifiedUserId === userId) return;
 
   if (identifiedUserId && identifiedUserId !== userId) {
     await OneSignal.logout();
     identifiedUserId = null;
-    identifiedRole = null;
   }
 
   await OneSignal.login(userId);
   identifiedUserId = userId;
-  identifiedRole = role;
-  OneSignal.User.addTags({ role });
 }
 
 export async function logoutOneSignal(): Promise<void> {
   if (!identifiedUserId) {
-    identifiedRole = null;
     return;
   }
   try {
@@ -131,7 +130,6 @@ export async function logoutOneSignal(): Promise<void> {
     // ignore
   }
   identifiedUserId = null;
-  identifiedRole = null;
 }
 
 export async function isPushOptedIn(): Promise<boolean> {
