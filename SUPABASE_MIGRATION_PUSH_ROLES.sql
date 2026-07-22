@@ -12,3 +12,9 @@ as $$
 $$;
 
 grant execute on function public.get_user_ids_by_role(app_role) to authenticated;
+
+-- A profile is created in the same transaction as the first Google sign-in.
+-- Keep created_at and updated_at identical until the app atomically claims
+-- the one-time "new student" admin notification.
+alter table public.profiles
+  alter column updated_at set default now();
