@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { AttachmentList } from "@/components/AttachmentList";
 import type { UploadedFile } from "@/lib/upload";
+import { notifyRole } from "@/lib/push";
 
 export const Route = createFileRoute("/admin/activities")({
   component: AdminActivities,
@@ -64,6 +65,7 @@ function AdminActivities() {
         created_by: user?.id ?? null,
       });
       if (error) throw error;
+      notifyRole("student", "New activity", title.trim(), "/activities");
       setTitle("");
       setDescription("");
       setDue("");

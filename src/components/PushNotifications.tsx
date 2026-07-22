@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { logoutOneSignal, setupOneSignalForUser } from "@/lib/onesignal";
-import { PushEnableBanner } from "@/components/PushEnableBanner";
 
 export function PushNotifications() {
   const { user, isAdmin, loading } = useAuth();
@@ -22,5 +21,7 @@ export function PushNotifications() {
     void setupOneSignalForUser(user.id, isAdmin ? "admin" : "student").catch(() => {});
   }, [user, isAdmin, loading]);
 
-  return <PushEnableBanner />;
+  // OneSignal owns the only subscription prompt. This component only keeps
+  // the signed-in app user linked to their push subscription.
+  return null;
 }

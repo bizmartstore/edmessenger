@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bell, BellOff, CheckCircle2, Send, Smartphone } from "lucide-react";
-import { getPushStatus, requestPushPermission, subscribePushChange, type PushStatus } from "@/lib/onesignal";
-import { clearPushDismiss } from "@/components/PushEnableBanner";
+import { getPushStatus, subscribePushChange, type PushStatus } from "@/lib/onesignal";
 import { notifyUsers } from "@/lib/push";
 import { toast } from "sonner";
 
@@ -11,7 +10,6 @@ interface Props {
 
 export function NotificationStatusCard({ userId }: Props) {
   const [status, setStatus] = useState<PushStatus | null>(null);
-  const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
 
   useEffect(() => {
@@ -30,23 +28,6 @@ export function NotificationStatusCard({ userId }: Props) {
       document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
-
-  async function enable() {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const ok = await requestPushPermission();
-      if (ok) {
-        clearPushDismiss();
-        toast.success("Notifications enabled");
-      } else {
-        toast.error("Permission not granted");
-      }
-      setStatus(await getPushStatus());
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function test() {
     if (testing) return;
@@ -107,16 +88,6 @@ export function NotificationStatusCard({ userId }: Props) {
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        {!optedIn && !denied && !iosNeedsInstall && (
-          <button
-            type="button"
-            onClick={() => void enable()}
-            disabled={busy}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl gradient-primary text-primary-foreground text-xs font-semibold disabled:opacity-50"
-          >
-            <Bell className="h-3.5 w-3.5" /> {busy ? "Enabling…" : "Enable notifications"}
-          </button>
-        )}
         {optedIn && (
           <button
             type="button"
