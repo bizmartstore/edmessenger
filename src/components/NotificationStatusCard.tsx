@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bell, BellOff, CheckCircle2, Send, Smartphone } from "lucide-react";
 import { getPushStatus, requestPushPermission, subscribePushChange, type PushStatus } from "@/lib/onesignal";
-import { clearPushDismiss } from "@/components/PushEnableBanner";
 import { notifyUsers } from "@/lib/push";
 import { toast } from "sonner";
 
@@ -37,7 +36,6 @@ export function NotificationStatusCard({ userId }: Props) {
     try {
       const ok = await requestPushPermission();
       if (ok) {
-        clearPushDismiss();
         toast.success("Notifications enabled");
       } else {
         toast.error("Permission not granted");
