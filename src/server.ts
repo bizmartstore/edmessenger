@@ -318,7 +318,7 @@ async function handlePushNotify(request: Request, envBag: EnvBag): Promise<Respo
     contents: { en: body },
   };
   if (abs) {
-    base.url = abs;
+    // OneSignal rejects `url` when `web_url` / `app_url` are set.
     base.web_url = abs;
     base.app_url = abs;
   }
