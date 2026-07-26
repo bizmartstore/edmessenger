@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bell, BellOff, CheckCircle2, Send, Smartphone } from "lucide-react";
-import { getPushStatus, subscribePushChange, type PushStatus } from "@/lib/onesignal";
+import { useAuth } from "@/hooks/useAuth";
+import { getPushStatus, requestPushPermission, subscribePushChange, type PushStatus } from "@/lib/onesignal";
 import { notifyUsers } from "@/lib/push";
 import { toast } from "sonner";
 
@@ -9,17 +10,20 @@ interface Props {
 }
 
 export function NotificationStatusCard({ userId }: Props) {
+  const { isAdmin } = useAuth();
+  const role = isAdmin ? "admin" : "student";
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [testing, setTesting] = useState(false);
+  const [enabling, setEnabling] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     async function refresh() {
-      const s = await getPushStatus();
+      const s = await getPushStatus(userId, role);
       if (!cancelled) setStatus(s);
     }
     void refresh();
-    const unsub = subscribePushChange(() => void refresh());
+    const unsub = subscribePushChange(userId, role, () => void refresh());
     const onVis = () => document.visibilityState === "visible" && void refresh();
     document.addEventListener("visibilitychange", onVis);
     return () => {
@@ -27,7 +31,23 @@ export function NotificationStatusCard({ userId }: Props) {
       unsub();
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, []);
+  }, [userId, role]);
+
+  async function enable() {
+    if (enabling) return;
+    setEnabling(true);
+    try {
+      const ok = await requestPushPermission(userId, role);
+      if (ok) {
+        toast.success("Notifications enabled");
+        setStatus(await getPushStatus(userId, role));
+      } else {
+        toast.error("Permission not granted — check browser notification settings");
+      }
+    } finally {
+      setEnabling(false);
+    }
+  }
 
   async function test() {
     if (testing) return;
@@ -88,6 +108,16 @@ export function NotificationStatusCard({ userId }: Props) {
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
+        {!optedIn && !denied && !iosNeedsInstall && (
+          <button
+            type="button"
+            onClick={() => void enable()}
+            disabled={enabling}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl gradient-primary text-primary-foreground text-xs font-semibold shadow-glow disabled:opacity-50"
+          >
+            <Bell className="h-3.5 w-3.5" /> {enabling ? "Enabling…" : "Enable notifications"}
+          </button>
+        )}
         {optedIn && (
           <button
             type="button"

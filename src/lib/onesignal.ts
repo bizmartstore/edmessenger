@@ -52,21 +52,34 @@ function withSdk(fn: (OneSignal: OneSignalSDK) => void | Promise<void>): void {
   window.OneSignalDeferred.push(fn);
 }
 
-async function removeLegacyPushWorker(): Promise<void> {
+/** Remove stale workers from old /push/ scope or duplicate OneSignal registrations. */
+async function removeStaleServiceWorkers(): Promise<void> {
   if (!("serviceWorker" in navigator)) return;
   try {
     const registrations = await navigator.serviceWorker.getRegistrations();
     await Promise.all(
-      registrations
-        .filter((registration) => new URL(registration.scope).pathname === "/push/")
-        .map((registration) => registration.unregister()),
+      registrations.map(async (registration) => {
+        const scopePath = new URL(registration.scope).pathname;
+        const scriptUrl =
+          registration.active?.scriptURL ??
+          registration.installing?.scriptURL ??
+          registration.waiting?.scriptURL ??
+          "";
+
+        const isLegacyPushScope = scopePath === "/push/" || scopePath.endsWith("/push/");
+        const isOneSignalWorker = scriptUrl.includes("OneSignalSDKWorker.js");
+        const isRootScope = scopePath === "/" || scopePath.endsWith("/");
+
+        if (isLegacyPushScope) return registration.unregister();
+        if (isRootScope && scriptUrl && !isOneSignalWorker) return registration.unregister();
+      }),
     );
   } catch {
-    // A stale registration is harmless if the browser does not allow cleanup.
+    // Browser may block cleanup; a stale registration is harmless if init succeeds.
   }
 }
 
-export function initOneSignal(): Promise<OneSignalSDK> {
+function initOneSignalSdk(): Promise<OneSignalSDK> {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("OneSignal is browser-only"));
   }
@@ -76,7 +89,7 @@ export function initOneSignal(): Promise<OneSignalSDK> {
   initPromise = new Promise((resolve, reject) => {
     withSdk(async (OneSignal) => {
       try {
-        await removeLegacyPushWorker();
+        await removeStaleServiceWorkers();
         await OneSignal.init({
           appId: ONESIGNAL_APP_ID,
           allowLocalhostAsSecureOrigin: true,
@@ -85,17 +98,7 @@ export function initOneSignal(): Promise<OneSignalSDK> {
           notifyButton: { enable: false },
           welcomeNotification: { disable: true },
           autoResubscribe: true,
-          promptOptions: {
-            slidedown: {
-              prompts: [
-                {
-                  type: "push",
-                  autoPrompt: true,
-                  delay: { pageViews: 1, timeDelay: 1 },
-                },
-              ],
-            },
-          },
+          // No autoPrompt — subscribe only after login via requestPushPermission().
         });
         resolve(OneSignal);
       } catch (err) {
@@ -110,18 +113,15 @@ export function initOneSignal(): Promise<OneSignalSDK> {
 /** Init SDK and identify the user in one step to avoid orphan anonymous subscriptions. */
 export async function setupOneSignalForUser(
   userId: string,
-  role: "admin" | "student",
+  _role: "admin" | "student",
 ): Promise<OneSignalSDK> {
-  const OneSignal = await initOneSignal();
-  await identifyOneSignalUser(userId, role);
+  const OneSignal = await initOneSignalSdk();
+  await identifyOneSignalUser(userId);
   return OneSignal;
 }
 
-export async function identifyOneSignalUser(
-  userId: string,
-  _role: "admin" | "student",
-): Promise<void> {
-  const OneSignal = await initOneSignal();
+export async function identifyOneSignalUser(userId: string): Promise<void> {
+  const OneSignal = await initOneSignalSdk();
 
   if (identifiedUserId === userId) return;
 
@@ -135,11 +135,9 @@ export async function identifyOneSignalUser(
 }
 
 export async function logoutOneSignal(): Promise<void> {
-  if (!identifiedUserId) {
-    return;
-  }
+  if (!identifiedUserId) return;
   try {
-    const OneSignal = await initOneSignal();
+    const OneSignal = await initOneSignalSdk();
     await OneSignal.logout();
   } catch {
     // ignore
@@ -147,9 +145,10 @@ export async function logoutOneSignal(): Promise<void> {
   identifiedUserId = null;
 }
 
-export async function isPushOptedIn(): Promise<boolean> {
+export async function isPushOptedIn(userId: string, role: "admin" | "student" = "student"): Promise<boolean> {
   try {
-    const OneSignal = await initOneSignal();
+    await setupOneSignalForUser(userId, role);
+    const OneSignal = await initOneSignalSdk();
     return Boolean(OneSignal.User.PushSubscription.optedIn);
   } catch {
     return false;
@@ -182,7 +181,7 @@ export function getEnvPushInfo(): { supported: boolean; isIOS: boolean; isStanda
   return { supported, isIOS, isStandalone };
 }
 
-export async function getPushStatus(): Promise<PushStatus> {
+export async function getPushStatus(userId: string, role: "admin" | "student" = "student"): Promise<PushStatus> {
   const env = getEnvPushInfo();
   if (!env.supported) {
     return {
@@ -198,7 +197,8 @@ export async function getPushStatus(): Promise<PushStatus> {
     typeof Notification !== "undefined" ? Notification.permission : "default";
   let optedIn = false;
   try {
-    const OneSignal = await initOneSignal();
+    await setupOneSignalForUser(userId, role);
+    const OneSignal = await initOneSignalSdk();
     optedIn = Boolean(OneSignal.User.PushSubscription.optedIn);
   } catch {
     // ignore
@@ -213,8 +213,9 @@ export async function getPushStatus(): Promise<PushStatus> {
   };
 }
 
-export async function requestPushPermission(): Promise<boolean> {
-  const OneSignal = await initOneSignal();
+export async function requestPushPermission(userId: string, role: "admin" | "student" = "student"): Promise<boolean> {
+  await setupOneSignalForUser(userId, role);
+  const OneSignal = await initOneSignalSdk();
   if (OneSignal.User.PushSubscription.optedIn) return true;
 
   const granted = await OneSignal.Notifications.requestPermission();
@@ -228,9 +229,13 @@ export async function requestPushPermission(): Promise<boolean> {
   return Boolean(granted || OneSignal.User.PushSubscription.optedIn);
 }
 
-export function subscribePushChange(listener: () => void): () => void {
+export function subscribePushChange(
+  userId: string,
+  role: "admin" | "student",
+  listener: () => void,
+): () => void {
   let unsub: (() => void) | null = null;
-  void initOneSignal()
+  void setupOneSignalForUser(userId, role)
     .then((OneSignal) => {
       const handler = () => listener();
       OneSignal.User.PushSubscription.addEventListener("change", handler);
