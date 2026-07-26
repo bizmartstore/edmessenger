@@ -354,11 +354,10 @@ async function handlePushNotify(request: Request, envBag: EnvBag): Promise<Respo
   const appId = resolveAppId(envBag);
   const originUrl = new URL(request.url).origin;
   const abs = absoluteUrl(originUrl, payload.url);
-  // Color logo = main notification icon (right / large).
-  // Monochrome white-on-transparent badge = Android small/status icon (left).
-  // Full-color images on chrome_web_badge render as a solid white square on Android.
-  const iconUrl = `${originUrl}/logo-pwa.png`;
-  const badgeUrl = `${originUrl}/icons/notif-badge.png`;
+  // Full-color EdMessenger crest logo as the notification icon.
+  // Do NOT set chrome_web_badge to a full-color image — Android renders that as a solid white square.
+  // Omitting badge lets Chrome use a system default for the tiny status glyph; the main icon shows the logo.
+  const iconUrl = `${originUrl}/icons/push-icon.png?v=2`;
   const base: Record<string, unknown> = {
     app_id: appId,
     target_channel: "push",
@@ -368,7 +367,6 @@ async function handlePushNotify(request: Request, envBag: EnvBag): Promise<Respo
     ios_badgeType: "Increase",
     ios_badgeCount: 1,
     chrome_web_icon: iconUrl,
-    chrome_web_badge: badgeUrl,
     firefox_icon: iconUrl,
     large_icon: iconUrl,
     huawei_large_icon: iconUrl,
