@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { ArrowLeft, Heart, Sparkles, Swords, Map as MapIcon, Zap } from "lucide-react";
-import type Phaser from "phaser";
 import { useAuth } from "@/hooks/useAuth";
 import {
   MAPS,
@@ -19,8 +18,24 @@ import {
   xpToNext,
 } from "@/lib/edgotchi";
 import { VoxelPainter, VoxelPreview } from "./VoxelPainter";
-import { createEdgotchiBattleGame, emitBattleVfx } from "./battleScene";
 import { cn } from "@/lib/utils";
+
+type BattleGame = {
+  destroy: (removeCanvas?: boolean) => void;
+  events: { emit: (event: string, ...args: unknown[]) => boolean };
+};
+
+type BattleVfx =
+  | { type: "skill"; skill: SkillId; from: "player" | "enemy" }
+  | { type: "hit"; target: "player" | "enemy"; amount: number }
+  | { type: "heal"; amount: number }
+  | { type: "shield" }
+  | { type: "win" }
+  | { type: "lose" };
+
+function emitVfx(game: BattleGame | null, evt: BattleVfx) {
+  game?.events.emit("edgotchi-vfx", evt);
+}
 
 type Screen = "loading" | "create" | "hub" | "explore" | "battle";
 
@@ -329,7 +344,7 @@ function BattleScreen({
   onBack: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const gameRef = useRef<Phaser.Game | null>(null);
+  const gameRef = useRef<BattleGame | null>(null);
   const [questions, setQuestions] = useState<QuizQ[]>([]);
   const [qIndex, setQIndex] = useState(0);
   const [phase, setPhase] = useState<"quiz" | "skill" | "enemy" | "end">("quiz");
@@ -363,16 +378,23 @@ function BattleScreen({
 
   useEffect(() => {
     const el = hostRef.current;
-    if (!el) return;
-    const game = createEdgotchiBattleGame(el, {
-      voxels: pet.voxels,
-      mapTint: map.tint,
-      playerName: pet.name,
-      enemyName: enemy.name,
+    if (!el || typeof window === "undefined") return;
+    let cancelled = false;
+    let game: BattleGame | null = null;
+    // Dynamic import keeps Phaser out of the Nitro/SSR Cloudflare Worker graph.
+    void import("./battleScene").then(({ createEdgotchiBattleGame }) => {
+      if (cancelled || !hostRef.current) return;
+      game = createEdgotchiBattleGame(hostRef.current, {
+        voxels: pet.voxels,
+        mapTint: map.tint,
+        playerName: pet.name,
+        enemyName: enemy.name,
+      });
+      gameRef.current = game;
     });
-    gameRef.current = game;
     return () => {
-      game.destroy(true);
+      cancelled = true;
+      game?.destroy(true);
       gameRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once per battle
@@ -382,7 +404,7 @@ function BattleScreen({
 
   async function finish(won: boolean) {
     setPhase("end");
-    emitBattleVfx(gameRef.current, { type: won ? "win" : "lose" });
+    emitVfx(gameRef.current, { type: won ? "win" : "lose" });
     const xpGain = won ? 28 + pet.level * 4 : 8;
     let next: EdgotchiRow = {
       ...pet,
@@ -418,8 +440,8 @@ function BattleScreen({
       }
       setPlayerHp((h) => {
         const nh = Math.max(0, h - dmg);
-        emitBattleVfx(gameRef.current, { type: "hit", target: "player", amount: dmg });
-        emitBattleVfx(gameRef.current, { type: "skill", skill: "spark", from: "enemy" });
+        emitVfx(gameRef.current, { type: "hit", target: "player", amount: dmg });
+        emitVfx(gameRef.current, { type: "skill", skill: "spark", from: "enemy" });
         setMessage(`${enemy.name} hits for ${dmg}!`);
         if (nh <= 0) {
           window.setTimeout(() => void finish(false), 600);
@@ -442,24 +464,24 @@ function BattleScreen({
     }
     setBusy(true);
     setPlayerMana((m) => m - def.mana);
-    emitBattleVfx(gameRef.current, { type: "skill", skill, from: "player" });
+    emitVfx(gameRef.current, { type: "skill", skill, from: "player" });
 
     let enemyHpNow = enemyHpRef.current;
     if (skill === "heal") {
       const heal = Math.abs(def.power);
       setPlayerHp((h) => Math.min(pet.max_hp, h + heal));
-      emitBattleVfx(gameRef.current, { type: "heal", amount: heal });
+      emitVfx(gameRef.current, { type: "heal", amount: heal });
       setMessage(`Healed ${heal} HP!`);
     } else if (skill === "shield") {
       setShield(true);
-      emitBattleVfx(gameRef.current, { type: "shield" });
+      emitVfx(gameRef.current, { type: "shield" });
       setMessage("Focus Shield armed!");
     } else {
       const dmg = def.power + Math.floor(pet.level * 1.5);
       enemyHpNow = Math.max(0, enemyHpRef.current - dmg);
       enemyHpRef.current = enemyHpNow;
       setEnemy((e) => ({ ...e, hp: enemyHpNow }));
-      emitBattleVfx(gameRef.current, { type: "hit", target: "enemy", amount: dmg });
+      emitVfx(gameRef.current, { type: "hit", target: "enemy", amount: dmg });
       setMessage(`${def.name} deals ${dmg}!`);
     }
     window.setTimeout(() => {

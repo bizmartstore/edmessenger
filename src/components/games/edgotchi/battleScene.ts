@@ -1,4 +1,5 @@
-import Phaser from "phaser";
+// Phaser's ESM build only has named exports (no default) — required for Nitro/Rolldown.
+import * as Phaser from "phaser";
 import type { SkillId, Voxel } from "@/lib/edgotchi";
 import { PALETTE, SKILLS } from "@/lib/edgotchi";
 
