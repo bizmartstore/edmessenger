@@ -10,6 +10,7 @@ Supabase: `https://ijxoffbsedvcqbqeohju.supabase.co`
 4. Then run **`SUPABASE_MIGRATION_PROFILE_BANNERS.sql`** (profile fields, banners carousel, unread badges, avatars/banners storage)
 5. Then run **`SUPABASE_MIGRATION_REALTIME_CONTENT.sql`** (live updates for announcements/lessons/quizzes/activities without polling)
 6. Then run **`SUPABASE_MIGRATION_PUSH_ROLES.sql`** (push notification role lookup for OneSignal)
+7. Then run **`SUPABASE_MIGRATION_REVIEWERS.sql`** (lesson reviewers with explanations + practice attempts)
 
 Primary admin emails (auto-admin, Student/Admin toggle):
 - `sheethappenswithjaa@gmail.com`
@@ -27,3 +28,10 @@ Install banner appears only when the browser supports real install (`beforeinsta
 - Server sends via `POST /api/push/notify` (auth required); health: `GET /api/push/health`
 - REST API key is **server-side only** — prefer Cloudflare secret `ONESIGNAL_REST_API_KEY` (do not put it in client code or wrangler `[vars]`)
 - iOS Safari: Add to Home Screen (PWA) required for web push
+
+## Gemini (lesson reviewers)
+
+- Used by **Admin → Lessons → Reviewers → Generate with AI**
+- Set Cloudflare secret: `GEMINI_API_KEY` (Google AI Studio / Gemini API key)
+- Health: `GET /api/ai/gemini-health`
+- Generate: `POST /api/ai/generate-reviewer` (admin auth required)

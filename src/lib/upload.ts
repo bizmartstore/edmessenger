@@ -152,13 +152,30 @@ export async function processFile(file: File): Promise<File> {
   return pdfOrOfficeToLean(file);
 }
 
+const LESSON_MAX_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Lesson materials stay as uploaded (PDF presentations, etc.) so Read/Download
+ * serve the real file. Chat/other buckets still get lean conversion.
+ */
+async function prepareForBucket(bucket: string, file: File): Promise<File> {
+  if (bucket === "lessons") {
+    if (file.type.startsWith("image/")) return compressImage(file);
+    if (file.size > LESSON_MAX_BYTES) {
+      throw new Error("File too large (max 25 MB for lesson materials)");
+    }
+    return file;
+  }
+  return processFile(file);
+}
+
 export async function uploadToBucket(
   bucket: string,
   file: File,
   userId: string,
   subdir = ""
 ): Promise<UploadedFile> {
-  const processed = await processFile(file);
+  const processed = await prepareForBucket(bucket, file);
   const safeName = processed.name.replace(/[^\w.\-]+/g, "_");
   const ts = Date.now();
   const path = [userId, subdir, `${ts}-${safeName}`].filter(Boolean).join("/");
@@ -183,4 +200,25 @@ export function humanSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+/** Force a true file download (not inline preview). Works for cross-origin Supabase URLs. */
+export async function downloadFile(url: string, fileName: string): Promise<void> {
+  const res = await fetch(url, { mode: "cors", credentials: "omit", cache: "no-store" });
+  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  const buffer = await res.arrayBuffer();
+  // octet-stream discourages browsers from opening PDFs in a new tab
+  const blob = new Blob([buffer], { type: "application/octet-stream" });
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = fileName || "download";
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  window.setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+  }, 1500);
 }

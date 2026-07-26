@@ -11,6 +11,7 @@ type EnvBag = {
   ASSETS?: { fetch: (request: Request) => Promise<Response> };
   ONESIGNAL_REST_API_KEY?: string;
   ONESIGNAL_APP_ID?: string;
+  GEMINI_API_KEY?: string;
 };
 
 type CloudflareGlobal = typeof globalThis & {
@@ -68,6 +69,11 @@ function resolveEnv(env: unknown, request?: Request): EnvBag {
       readStringBinding(fromReq, "ONESIGNAL_APP_ID") ||
       readStringBinding(fromNitro, "ONESIGNAL_APP_ID") ||
       fromProcess?.ONESIGNAL_APP_ID,
+    GEMINI_API_KEY:
+      readStringBinding(fromArg, "GEMINI_API_KEY") ||
+      readStringBinding(fromReq, "GEMINI_API_KEY") ||
+      readStringBinding(fromNitro, "GEMINI_API_KEY") ||
+      fromProcess?.GEMINI_API_KEY,
   };
 }
 
@@ -197,7 +203,12 @@ type PushBody = {
   audience?: PushAudience;
 };
 
-async function verifySupabaseUser(token: string): Promise<boolean> {
+const PRIMARY_ADMIN_EMAILS = new Set([
+  "sheethappenswithjaa@gmail.com",
+  "sheethappenwithjaa@gmail.com",
+]);
+
+async function verifySupabaseUser(token: string): Promise<{ id: string; email: string | null } | null> {
   try {
     const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: {
@@ -205,7 +216,32 @@ async function verifySupabaseUser(token: string): Promise<boolean> {
         Authorization: `Bearer ${token}`,
       },
     });
-    return res.ok;
+    if (!res.ok) return null;
+    const user = (await res.json()) as { id?: string; email?: string };
+    if (!user?.id) return null;
+    return { id: user.id, email: user.email ?? null };
+  } catch {
+    return null;
+  }
+}
+
+async function verifyAdmin(token: string): Promise<boolean> {
+  const user = await verifySupabaseUser(token);
+  if (!user) return false;
+  if (user.email && PRIMARY_ADMIN_EMAILS.has(user.email.trim().toLowerCase())) return true;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/user_roles?select=role&user_id=eq.${encodeURIComponent(user.id)}&role=eq.admin&limit=1`,
+      {
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    if (!res.ok) return false;
+    const rows = (await res.json()) as unknown[];
+    return Array.isArray(rows) && rows.length > 0;
   } catch {
     return false;
   }
@@ -381,6 +417,171 @@ function handlePushHealth(envArg: unknown, envBag: EnvBag, request?: Request): R
   return jsonResponse({ ok: true, ...pushConfigDiagnostics(envArg, envBag, request) });
 }
 
+type GenerateReviewerBody = {
+  topic?: string;
+  notes?: string;
+  count?: number;
+};
+
+type GeneratedQuestion = {
+  question: string;
+  options: string[];
+  correct_index: number;
+  explanation: string;
+};
+
+function extractGeminiJson(text: string): unknown {
+  const trimmed = text.trim();
+  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fence ? fence[1].trim() : trimmed;
+  const start = candidate.indexOf("[");
+  const end = candidate.lastIndexOf("]");
+  if (start >= 0 && end > start) {
+    return JSON.parse(candidate.slice(start, end + 1));
+  }
+  return JSON.parse(candidate);
+}
+
+function normalizeGeneratedQuestions(raw: unknown, count: number): GeneratedQuestion[] {
+  if (!Array.isArray(raw)) return [];
+  const out: GeneratedQuestion[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const question = String(o.question ?? "").trim();
+    const options = Array.isArray(o.options)
+      ? o.options.map((x) => String(x).trim()).filter(Boolean).slice(0, 6)
+      : [];
+    let correct =
+      typeof o.correct_index === "number"
+        ? o.correct_index
+        : typeof o.correctIndex === "number"
+          ? o.correctIndex
+          : 0;
+    if (!Number.isFinite(correct)) correct = 0;
+    const explanation = String(o.explanation ?? "").trim();
+    if (!question || options.length < 2) continue;
+    out.push({
+      question,
+      options,
+      correct_index: Math.max(0, Math.min(Math.floor(correct), options.length - 1)),
+      explanation,
+    });
+    if (out.length >= count) break;
+  }
+  return out;
+}
+
+async function handleGenerateReviewer(request: Request, envBag: EnvBag): Promise<Response> {
+  const origin = request.headers.get("origin");
+  const cors = corsHeaders(origin);
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: cors });
+  }
+  if (request.method !== "POST") {
+    return jsonResponse({ ok: false, error: "Method not allowed" }, 405, cors);
+  }
+
+  const auth = request.headers.get("authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!token || !(await verifyAdmin(token))) {
+    return jsonResponse({ ok: false, error: "Unauthorized" }, 401, cors);
+  }
+
+  const apiKey = envBag.GEMINI_API_KEY?.trim() || "";
+  if (!apiKey) {
+    return jsonResponse(
+      { ok: false, error: "GEMINI_API_KEY not configured on the server" },
+      503,
+      cors,
+    );
+  }
+
+  let payload: GenerateReviewerBody;
+  try {
+    payload = (await request.json()) as GenerateReviewerBody;
+  } catch {
+    return jsonResponse({ ok: false, error: "Invalid JSON" }, 400, cors);
+  }
+
+  const topic = typeof payload.topic === "string" ? payload.topic.trim() : "";
+  const notes = typeof payload.notes === "string" ? payload.notes.trim() : "";
+  const count = Math.max(1, Math.min(20, Math.floor(Number(payload.count) || 5)));
+  if (!topic && !notes) {
+    return jsonResponse({ ok: false, error: "topic or notes required" }, 400, cors);
+  }
+
+  const prompt = `You are an education assistant. Create ${count} multiple-choice review questions for students practicing a lesson.
+
+Topic: ${topic || "(from notes)"}
+Lesson notes / source material:
+${notes || "(none — use the topic only)"}
+
+Rules:
+- Exactly 4 options per question (A–D style, but return plain option strings)
+- One correct answer per question
+- Include a short explanation that teaches why the correct answer is right
+- Keep language clear for students
+- Return ONLY a JSON array (no markdown) with objects shaped like:
+  {"question":"...","options":["...","...","...","..."],"correct_index":0,"explanation":"..."}
+- correct_index is 0-based`;
+
+  try {
+    const geminiUrl =
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(geminiUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.4,
+          responseMimeType: "application/json",
+        },
+      }),
+    });
+    const text = await res.text();
+    let parsed: unknown = text;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      // keep raw
+    }
+    if (!res.ok) {
+      const errMsg =
+        typeof parsed === "object" && parsed && "error" in (parsed as object)
+          ? JSON.stringify((parsed as { error?: unknown }).error)
+          : `Gemini HTTP ${res.status}`;
+      return jsonResponse({ ok: false, error: errMsg }, 502, cors);
+    }
+
+    const candidates =
+      typeof parsed === "object" && parsed && "candidates" in (parsed as object)
+        ? (parsed as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }).candidates
+        : undefined;
+    const rawText = candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("\n") ?? "";
+    if (!rawText.trim()) {
+      return jsonResponse({ ok: false, error: "Gemini returned empty content" }, 502, cors);
+    }
+
+    const questions = normalizeGeneratedQuestions(extractGeminiJson(rawText), count);
+    if (!questions.length) {
+      return jsonResponse({ ok: false, error: "Could not parse Gemini questions" }, 502, cors);
+    }
+    return jsonResponse({ ok: true, questions }, 200, cors);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Gemini failed";
+    console.error("generate reviewer failed", err);
+    return jsonResponse({ ok: false, error: message }, 502, cors);
+  }
+}
+
+function handleGeminiHealth(envBag: EnvBag): Response {
+  const key = envBag.GEMINI_API_KEY?.trim() || "";
+  return jsonResponse({ ok: true, configured: Boolean(key), keyLength: key.length });
+}
+
 async function handleKeepAlive(): Promise<Response> {
   const started = Date.now();
   let supabaseOk = false;
@@ -429,6 +630,14 @@ export default {
 
       if (url.pathname === "/api/push/notify") {
         return handlePushNotify(request, envBag);
+      }
+
+      if (url.pathname === "/api/ai/generate-reviewer") {
+        return handleGenerateReviewer(request, envBag);
+      }
+
+      if (url.pathname === "/api/ai/gemini-health") {
+        return handleGeminiHealth(envBag);
       }
 
       const handler = await getServerEntry();

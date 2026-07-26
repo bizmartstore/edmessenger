@@ -31,6 +31,7 @@ import { Route as AppActivitiesRouteImport } from './routes/_app.activities'
 import { Route as AppQuizzesIdRouteImport } from './routes/_app.quizzes.$id'
 import { Route as AppDmPeerIdRouteImport } from './routes/_app.dm.$peerId'
 import { Route as AppActivitiesIdRouteImport } from './routes/_app.activities.$id'
+import { Route as AppLessonsReviewersIdRouteImport } from './routes/_app.lessons_.reviewers.$id'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -141,6 +142,11 @@ const AppActivitiesIdRoute = AppActivitiesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AppActivitiesRoute,
 } as any)
+const AppLessonsReviewersIdRoute = AppLessonsReviewersIdRouteImport.update({
+  id: '/lessons_/reviewers/$id',
+  path: '/lessons/reviewers/$id',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -164,6 +170,7 @@ export interface FileRoutesByFullPath {
   '/activities/$id': typeof AppActivitiesIdRoute
   '/dm/$peerId': typeof AppDmPeerIdRoute
   '/quizzes/$id': typeof AppQuizzesIdRoute
+  '/lessons/reviewers/$id': typeof AppLessonsReviewersIdRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
@@ -186,6 +193,7 @@ export interface FileRoutesByTo {
   '/activities/$id': typeof AppActivitiesIdRoute
   '/dm/$peerId': typeof AppDmPeerIdRoute
   '/quizzes/$id': typeof AppQuizzesIdRoute
+  '/lessons/reviewers/$id': typeof AppLessonsReviewersIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -211,6 +219,7 @@ export interface FileRoutesById {
   '/_app/activities/$id': typeof AppActivitiesIdRoute
   '/_app/dm/$peerId': typeof AppDmPeerIdRoute
   '/_app/quizzes/$id': typeof AppQuizzesIdRoute
+  '/_app/lessons_/reviewers/$id': typeof AppLessonsReviewersIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -236,6 +245,7 @@ export interface FileRouteTypes {
     | '/activities/$id'
     | '/dm/$peerId'
     | '/quizzes/$id'
+    | '/lessons/reviewers/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/auth'
@@ -258,6 +268,7 @@ export interface FileRouteTypes {
     | '/activities/$id'
     | '/dm/$peerId'
     | '/quizzes/$id'
+    | '/lessons/reviewers/$id'
   id:
     | '__root__'
     | '/_app'
@@ -282,6 +293,7 @@ export interface FileRouteTypes {
     | '/_app/activities/$id'
     | '/_app/dm/$peerId'
     | '/_app/quizzes/$id'
+    | '/_app/lessons_/reviewers/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -446,6 +458,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppActivitiesIdRouteImport
       parentRoute: typeof AppActivitiesRoute
     }
+    '/_app/lessons_/reviewers/$id': {
+      id: '/_app/lessons_/reviewers/$id'
+      path: '/lessons/reviewers/$id'
+      fullPath: '/lessons/reviewers/$id'
+      preLoaderRoute: typeof AppLessonsReviewersIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -483,6 +502,7 @@ interface AppRouteChildren {
   AppQuizzesRoute: typeof AppQuizzesRouteWithChildren
   AppIndexRoute: typeof AppIndexRoute
   AppDmPeerIdRoute: typeof AppDmPeerIdRoute
+  AppLessonsReviewersIdRoute: typeof AppLessonsReviewersIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -495,6 +515,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppQuizzesRoute: AppQuizzesRouteWithChildren,
   AppIndexRoute: AppIndexRoute,
   AppDmPeerIdRoute: AppDmPeerIdRoute,
+  AppLessonsReviewersIdRoute: AppLessonsReviewersIdRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
