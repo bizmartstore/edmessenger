@@ -35,6 +35,24 @@ declare global {
 
 let initPromise: Promise<OneSignalSDK> | null = null;
 let identifiedUserId: string | null = null;
+let lastSyncAt: number | null = null;
+
+const PUSH_EVENT = "edm:push-status-changed";
+
+export function emitPushStatusChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(PUSH_EVENT));
+}
+
+export function onPushStatusChanged(listener: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(PUSH_EVENT, listener);
+  return () => window.removeEventListener(PUSH_EVENT, listener);
+}
+
+export function getLastSyncAt(): number | null {
+  return lastSyncAt;
+}
 
 function ensureScript(): void {
   if (typeof document === "undefined") return;
