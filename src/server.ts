@@ -527,8 +527,13 @@ Rules:
   {"question":"...","options":["...","...","...","..."],"correct_index":0,"explanation":"..."}
 - correct_index is 0-based`;
 
-  // Prefer current free-tier Flash models; 2.0-flash often has limit:0 on exhausted projects.
-  const models = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"];
+  // Prefer models available to new API keys (older Flash IDs are often blocked).
+  const models = [
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+  ];
 
   try {
     let lastError = "Gemini request failed";
@@ -561,11 +566,17 @@ Rules:
             : undefined;
         const msg = geminiErr?.message || `Gemini HTTP ${res.status}`;
         lastError = msg;
-        // Try next model on quota / not found; fail fast on auth errors
+        // Try next model on quota / retired / missing; fail fast on auth errors
         if (geminiErr?.code === 401 || geminiErr?.code === 403) {
           return jsonResponse({ ok: false, error: friendlyGeminiError(msg) }, 502, cors);
         }
-        if (res.status === 429 || /quota|RESOURCE_EXHAUSTED|not found|NOT_FOUND/i.test(msg)) {
+        if (
+          res.status === 404 ||
+          res.status === 429 ||
+          /quota|RESOURCE_EXHAUSTED|not found|NOT_FOUND|no longer available|not supported|deprecated/i.test(
+            msg,
+          )
+        ) {
           continue;
         }
         return jsonResponse({ ok: false, error: friendlyGeminiError(msg) }, 502, cors);
