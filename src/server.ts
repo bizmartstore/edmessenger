@@ -273,6 +273,12 @@ async function fetchRoleUserIds(token: string, role: "admin" | "student"): Promi
     body: JSON.stringify({ _role: role }),
   });
   if (!res.ok) {
+    // PostgREST returns 404 when the RPC is missing from the schema cache.
+    if (res.status === 404) {
+      throw new Error(
+        "Missing DB function get_user_ids_by_role — run SUPABASE_MIGRATION_PUSH_ROLES.sql in Supabase SQL Editor",
+      );
+    }
     throw new Error(`Failed to load roles (${res.status})`);
   }
   const rows = (await res.json()) as unknown;
