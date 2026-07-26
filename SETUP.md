@@ -14,6 +14,8 @@ Supabase: `https://ijxoffbsedvcqbqeohju.supabase.co`
 8. Then run **`SUPABASE_MIGRATION_UNREAD_TOTAL.sql`** (reviewers in lessons badge + total for app-icon badge)
 9. Then run **`SUPABASE_MIGRATION_WALL_GROUPS.sql`** (class wall, student group chats + passwords, classroom replies, delete private conversations, daily upload quotas)
 10. Then run **`SUPABASE_MIGRATION_SOCIAL_TOOLS.sql`** (classroom soft-delete, wall likes/reactions/comments, group polls/reactions/pins)
+11. Then run **`SUPABASE_MIGRATION_CHAT_FEEDBACK_GROUP_QUIZ.sql`** (classroom reactions, group quizzes, app feedback)
+12. Then run **`SUPABASE_MIGRATION_EDGOTCHI.sql`** (Edgotchi virtual pet — one compact row per student)
 
 Primary admin emails (auto-admin, Student/Admin toggle):
 - `sheethappenswithjaa@gmail.com`

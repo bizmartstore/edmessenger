@@ -5,6 +5,7 @@ import { BottomNav } from "@/components/BottomNav";
 import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
 import { UnreadBadgesProvider } from "@/hooks/useUnreadBadges";
 import { PresenceProvider } from "@/hooks/usePresence";
+import { GamesProvider } from "@/hooks/useGames";
 
 export const Route = createFileRoute("/_app")({
   ssr: false,
@@ -30,13 +31,15 @@ function AppLayout() {
   return (
     <UnreadBadgesProvider>
       <PresenceProvider>
-        <div className="min-h-screen flex flex-col safe-top">
-          <main className="flex-1 pb-24 animate-fade-up">
-            <Outlet />
-          </main>
-          <BottomNav />
-          <PwaInstallPrompt />
-        </div>
+        <GamesProvider>
+          <div className="min-h-screen flex flex-col safe-top">
+            <main className="flex-1 pb-24 animate-fade-up">
+              <Outlet />
+            </main>
+            <BottomNav />
+            <PwaInstallPrompt />
+          </div>
+        </GamesProvider>
       </PresenceProvider>
     </UnreadBadgesProvider>
   );

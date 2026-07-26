@@ -1,12 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Lightbulb, Send, Bug, Sparkles, Wrench } from "lucide-react";
+import {
+  Lightbulb,
+  Send,
+  Bug,
+  Sparkles,
+  Wrench,
+  Eye,
+  Map,
+  CheckCircle2,
+  Archive,
+  CircleDot,
+} from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { notifyRole } from "@/lib/push";
 import { useLiveReload } from "@/hooks/useLiveReload";
 import { formatDistanceToNow } from "date-fns";
+import { feedbackStatusMeta, type FeedbackStatus } from "@/lib/feedback-status";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/feedback")({
   component: FeedbackPage,
@@ -29,6 +42,30 @@ const CATEGORIES: { key: Category; label: string; icon: typeof Lightbulb }[] = [
   { key: "bug", label: "Bug / issue", icon: Bug },
   { key: "other", label: "Other", icon: Lightbulb },
 ];
+
+const STATUS_ICONS = {
+  spark: CircleDot,
+  eye: Eye,
+  map: Map,
+  check: CheckCircle2,
+  archive: Archive,
+} as const;
+
+function FeedbackStatusBadge({ status }: { status: string }) {
+  const meta = feedbackStatusMeta(status);
+  const Icon = STATUS_ICONS[meta.icon];
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide",
+        meta.pill,
+      )}
+    >
+      <Icon className="h-3 w-3" />
+      {meta.label}
+    </span>
+  );
+}
 
 function FeedbackPage() {
   const { user, profile } = useAuth();
@@ -148,22 +185,53 @@ function FeedbackPage() {
 
       <section className="space-y-2">
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground px-1">Your recent feedback</div>
+        <div className="rounded-2xl border border-border/70 bg-muted/40 px-3 py-2 text-[10px] text-muted-foreground leading-relaxed">
+          Status updates from admins appear here in color:{" "}
+          <span className="font-semibold text-sky-700">Submitted</span>,{" "}
+          <span className="font-semibold text-violet-700">Reviewed</span>,{" "}
+          <span className="font-semibold text-amber-800">Planned</span>,{" "}
+          <span className="font-semibold text-emerald-700">Done</span>.
+        </div>
         {mine.length === 0 && (
           <div className="text-center text-xs text-muted-foreground py-6">No feedback yet — be the first to suggest something!</div>
         )}
-        {mine.map((f) => (
-          <div key={f.id} className="rounded-2xl border border-border bg-card p-3.5 shadow-card">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">{f.category}</span>
-              <span className="text-[10px] rounded-full bg-muted px-2 py-0.5 text-muted-foreground">{f.status}</span>
-              <span className="text-[10px] text-muted-foreground ml-auto">
-                {formatDistanceToNow(new Date(f.created_at), { addSuffix: true })}
-              </span>
+        {mine.map((f) => {
+          const meta = feedbackStatusMeta(f.status);
+          return (
+            <div
+              key={f.id}
+              className={cn(
+                "rounded-2xl border border-border bg-card p-3.5 shadow-card border-l-4 transition-colors",
+                meta.accent,
+              )}
+            >
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-primary">{f.category}</span>
+                <FeedbackStatusBadge status={f.status} />
+                <span className="text-[10px] text-muted-foreground ml-auto">
+                  {formatDistanceToNow(new Date(f.created_at), { addSuffix: true })}
+                </span>
+              </div>
+              <div className="font-semibold text-sm mt-1.5">{f.title}</div>
+              <div className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap">{f.body}</div>
+              <div
+                className={cn(
+                  "mt-2.5 rounded-xl border px-2.5 py-2 text-[11px] leading-snug",
+                  meta.pill,
+                )}
+              >
+                <span className="font-bold">{meta.label}: </span>
+                {meta.description}
+                {f.status === ("planned" satisfies FeedbackStatus) && (
+                  <span className="block mt-1 opacity-90">Keep an eye on announcements for when it ships.</span>
+                )}
+                {f.status === "done" && (
+                  <span className="block mt-1 opacity-90">Try the latest app update — your idea may already be live.</span>
+                )}
+              </div>
             </div>
-            <div className="font-semibold text-sm mt-1">{f.title}</div>
-            <div className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap">{f.body}</div>
-          </div>
-        ))}
+          );
+        })}
       </section>
     </div>
   );

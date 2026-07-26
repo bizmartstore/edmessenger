@@ -12,6 +12,7 @@ import {
   Megaphone,
   FolderKanban,
   Lightbulb,
+  Gamepad2,
   type LucideProps,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -20,19 +21,31 @@ import { PostWall } from "@/components/PostWall";
 import { UnreadBadge, useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { useLiveReload } from "@/hooks/useLiveReload";
 import { useAutoHorizontalScroll } from "@/hooks/useAutoHorizontalScroll";
+import { useGames } from "@/hooks/useGames";
 
-type HomeTile = {
-  to: "/chat" | "/activities" | "/lessons" | "/quizzes" | "/feedback";
-  icon: ComponentType<LucideProps>;
-  label: string;
-  color: string;
-  badge: number;
-};
+type HomeTile =
+  | {
+      kind: "link";
+      to: "/chat" | "/activities" | "/lessons" | "/quizzes" | "/feedback";
+      icon: ComponentType<LucideProps>;
+      label: string;
+      color: string;
+      badge: number;
+    }
+  | {
+      kind: "action";
+      id: string;
+      icon: ComponentType<LucideProps>;
+      label: string;
+      color: string;
+      onClick: () => void;
+    };
 
 function HomeActionCarousel({ tiles }: { tiles: readonly HomeTile[] }) {
   const scroll = useAutoHorizontalScroll(true, 0.35);
-  // Duplicate for seamless loop while auto-scrolling
   const loop = [...tiles, ...tiles];
+  const className =
+    "group relative flex w-[5.5rem] min-w-[5.5rem] shrink-0 flex-col items-center gap-1.5 rounded-2xl border border-border bg-card px-1 py-3 shadow-card transition-all hover:shadow-glow active:scale-95";
 
   return (
     <div
@@ -44,21 +57,33 @@ function HomeActionCarousel({ tiles }: { tiles: readonly HomeTile[] }) {
       style={{ WebkitOverflowScrolling: "touch" }}
       aria-label="Quick actions"
     >
-      {loop.map((t, i) => (
-        <Link
-          key={`${t.to}-${i}`}
-          to={t.to}
-          className="group relative flex w-[5.5rem] min-w-[5.5rem] shrink-0 flex-col items-center gap-1.5 rounded-2xl border border-border bg-card px-1 py-3 shadow-card transition-all hover:shadow-glow active:scale-95"
-        >
-          <UnreadBadge count={t.badge} className="top-1 right-1 -translate-y-0 translate-x-0" />
-          <div
-            className={`grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br ${t.color} shadow-soft transition-transform group-hover:scale-110`}
-          >
-            <t.icon className="h-[18px] w-[18px] text-white" />
-          </div>
-          <span className="text-center text-[10px] font-semibold leading-tight text-foreground/90">{t.label}</span>
-        </Link>
-      ))}
+      {loop.map((t, i) => {
+        const body = (
+          <>
+            {t.kind === "link" && (
+              <UnreadBadge count={t.badge} className="top-1 right-1 -translate-y-0 translate-x-0" />
+            )}
+            <div
+              className={`grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br ${t.color} shadow-soft transition-transform group-hover:scale-110`}
+            >
+              <t.icon className="h-[18px] w-[18px] text-white" />
+            </div>
+            <span className="text-center text-[10px] font-semibold leading-tight text-foreground/90">{t.label}</span>
+          </>
+        );
+        if (t.kind === "action") {
+          return (
+            <button key={`${t.id}-${i}`} type="button" onClick={t.onClick} className={className}>
+              {body}
+            </button>
+          );
+        }
+        return (
+          <Link key={`${t.to}-${i}`} to={t.to} className={className}>
+            {body}
+          </Link>
+        );
+      })}
     </div>
   );
 }
@@ -77,6 +102,7 @@ interface Announcement {
 function Home() {
   const { profile, signOut, canToggleAdmin, viewMode, setViewMode, isAdmin, actingAsAdmin } = useAuth();
   const { counts, markRead } = useUnreadBadges();
+  const { openGames } = useGames();
   const navigate = useNavigate();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
@@ -112,8 +138,9 @@ function Home() {
 
   const first = (profile?.full_name ?? "").split(" ")[0] || "friend";
 
-  const tiles = [
+  const tiles: HomeTile[] = [
     {
+      kind: "link",
       to: "/chat",
       icon: MessageCircle,
       label: "Chat",
@@ -121,6 +148,7 @@ function Home() {
       badge: counts.chat,
     },
     {
+      kind: "link",
       to: "/activities",
       icon: FolderKanban,
       label: "Activities",
@@ -128,6 +156,7 @@ function Home() {
       badge: counts.activities,
     },
     {
+      kind: "link",
       to: "/lessons",
       icon: BookOpen,
       label: "Lessons",
@@ -135,6 +164,7 @@ function Home() {
       badge: counts.lessons,
     },
     {
+      kind: "link",
       to: "/quizzes",
       icon: ClipboardList,
       label: "Quizzes",
@@ -142,13 +172,22 @@ function Home() {
       badge: counts.quizzes,
     },
     {
+      kind: "link",
       to: "/feedback",
       icon: Lightbulb,
       label: "Feedback",
       color: "from-rose-400 to-pink-600",
       badge: 0,
     },
-  ] satisfies readonly HomeTile[];
+    {
+      kind: "action",
+      id: "games",
+      icon: Gamepad2,
+      label: "Games",
+      color: "from-indigo-500 to-cyan-500",
+      onClick: openGames,
+    },
+  ];
 
   return (
     <div className="px-4 pt-6 max-w-md mx-auto pb-4">

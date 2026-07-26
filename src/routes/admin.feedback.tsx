@@ -5,6 +5,8 @@ import { Lightbulb, Archive } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useLiveReload } from "@/hooks/useLiveReload";
+import { feedbackStatusMeta } from "@/lib/feedback-status";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/feedback")({
   component: AdminFeedback,
@@ -90,18 +92,26 @@ function AdminFeedback() {
       </div>
 
       <div className="flex gap-1 overflow-x-auto pb-1">
-        {["new", "reviewed", "planned", "done", "archived", "all"].map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setFilter(s)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize whitespace-nowrap ${
-              filter === s ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground"
-            }`}
-          >
-            {s}
-          </button>
-        ))}
+        {["new", "reviewed", "planned", "done", "archived", "all"].map((s) => {
+          const meta = s === "all" ? null : feedbackStatusMeta(s);
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setFilter(s)}
+              className={cn(
+                "px-3 py-1.5 rounded-xl text-xs font-semibold capitalize whitespace-nowrap border",
+                filter === s
+                  ? "gradient-primary text-primary-foreground shadow-glow border-transparent"
+                  : meta
+                    ? cn("bg-card", meta.pill)
+                    : "bg-muted text-muted-foreground border-transparent",
+              )}
+            >
+              {s === "all" ? "all" : (meta?.short ?? s)}
+            </button>
+          );
+        })}
       </div>
 
       {loading && <div className="text-xs text-muted-foreground py-8 text-center">Loading…</div>}
@@ -110,54 +120,69 @@ function AdminFeedback() {
       )}
 
       <div className="space-y-3">
-        {rows.map((f) => (
-          <div key={f.id} className="rounded-2xl border border-border bg-card shadow-card p-4 space-y-3">
-            <div className="flex items-start gap-3">
-              {f.profiles?.avatar_url ? (
-                <img src={f.profiles.avatar_url} alt="" className="h-9 w-9 rounded-xl object-cover" />
-              ) : (
-                <div className="h-9 w-9 rounded-xl gradient-primary grid place-items-center text-primary-foreground text-xs font-bold">
-                  {(f.profiles?.full_name ?? "?")[0]?.toUpperCase()}
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="font-semibold text-sm">{f.title}</div>
-                <div className="text-[11px] text-muted-foreground">
-                  {f.profiles?.full_name ?? "Student"} · {f.category} ·{" "}
-                  {formatDistanceToNow(new Date(f.created_at), { addSuffix: true })}
+        {rows.map((f) => {
+          const meta = feedbackStatusMeta(f.status);
+          return (
+            <div
+              key={f.id}
+              className={cn("rounded-2xl border border-border bg-card shadow-card p-4 space-y-3 border-l-4", meta.accent)}
+            >
+              <div className="flex items-start gap-3">
+                {f.profiles?.avatar_url ? (
+                  <img src={f.profiles.avatar_url} alt="" className="h-9 w-9 rounded-xl object-cover" />
+                ) : (
+                  <div className="h-9 w-9 rounded-xl gradient-primary grid place-items-center text-primary-foreground text-xs font-bold">
+                    {(f.profiles?.full_name ?? "?")[0]?.toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold text-sm">{f.title}</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {f.profiles?.full_name ?? "Student"} · {f.category} ·{" "}
+                    {formatDistanceToNow(new Date(f.created_at), { addSuffix: true })}
+                  </div>
+                  <div className={cn("mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold", meta.pill)}>
+                    {meta.label}
+                  </div>
                 </div>
               </div>
+              <p className="text-sm whitespace-pre-wrap">{f.body}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {STATUSES.map((s) => {
+                  const sm = feedbackStatusMeta(s);
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => void setStatus(f.id, s)}
+                      className={cn(
+                        "px-2.5 py-1 rounded-lg text-[10px] font-semibold capitalize border transition-colors",
+                        f.status === s
+                          ? cn(sm.pill, "ring-2 ring-offset-1 ring-primary/30")
+                          : "bg-muted text-muted-foreground border-transparent hover:bg-secondary",
+                      )}
+                    >
+                      {s === "archived" ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Archive className="h-3 w-3" /> {sm.short}
+                        </span>
+                      ) : (
+                        sm.short
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <textarea
+                defaultValue={f.admin_note ?? ""}
+                placeholder="Admin note (private)…"
+                rows={2}
+                onBlur={(e) => void saveNote(f.id, e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-muted border border-border text-xs outline-none focus:border-primary resize-none"
+              />
             </div>
-            <p className="text-sm whitespace-pre-wrap">{f.body}</p>
-            <div className="flex flex-wrap gap-1.5">
-              {STATUSES.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => void setStatus(f.id, s)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold capitalize ${
-                    f.status === s ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground hover:bg-secondary"
-                  }`}
-                >
-                  {s === "archived" ? (
-                    <span className="inline-flex items-center gap-1">
-                      <Archive className="h-3 w-3" /> {s}
-                    </span>
-                  ) : (
-                    s
-                  )}
-                </button>
-              ))}
-            </div>
-            <textarea
-              defaultValue={f.admin_note ?? ""}
-              placeholder="Admin note (private)…"
-              rows={2}
-              onBlur={(e) => void saveNote(f.id, e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-muted border border-border text-xs outline-none focus:border-primary resize-none"
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
