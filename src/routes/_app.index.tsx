@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/hooks/useAuth";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ComponentType } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   MessageCircle,
@@ -12,12 +12,56 @@ import {
   Megaphone,
   FolderKanban,
   Lightbulb,
+  type LucideProps,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { BannerCarousel } from "@/components/BannerCarousel";
 import { PostWall } from "@/components/PostWall";
 import { UnreadBadge, useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { useLiveReload } from "@/hooks/useLiveReload";
+import { useAutoHorizontalScroll } from "@/hooks/useAutoHorizontalScroll";
+
+type HomeTile = {
+  to: "/chat" | "/activities" | "/lessons" | "/quizzes" | "/feedback";
+  icon: ComponentType<LucideProps>;
+  label: string;
+  color: string;
+  badge: number;
+};
+
+function HomeActionCarousel({ tiles }: { tiles: readonly HomeTile[] }) {
+  const scroll = useAutoHorizontalScroll(true, 0.35);
+  // Duplicate for seamless loop while auto-scrolling
+  const loop = [...tiles, ...tiles];
+
+  return (
+    <div
+      ref={scroll.ref}
+      onPointerDown={scroll.onPointerDown}
+      onTouchStart={scroll.onTouchStart}
+      onWheel={scroll.onWheel}
+      className="mt-4 flex gap-2.5 overflow-x-auto overscroll-x-contain scrollbar-none touch-pan-x pb-0.5"
+      style={{ WebkitOverflowScrolling: "touch" }}
+      aria-label="Quick actions"
+    >
+      {loop.map((t, i) => (
+        <Link
+          key={`${t.to}-${i}`}
+          to={t.to}
+          className="group relative flex w-[5.5rem] min-w-[5.5rem] shrink-0 flex-col items-center gap-1.5 rounded-2xl border border-border bg-card px-1 py-3 shadow-card transition-all hover:shadow-glow active:scale-95"
+        >
+          <UnreadBadge count={t.badge} className="top-1 right-1 -translate-y-0 translate-x-0" />
+          <div
+            className={`grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br ${t.color} shadow-soft transition-transform group-hover:scale-110`}
+          >
+            <t.icon className="h-[18px] w-[18px] text-white" />
+          </div>
+          <span className="text-center text-[10px] font-semibold leading-tight text-foreground/90">{t.label}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
 
 export const Route = createFileRoute("/_app/")({
   component: Home,
@@ -104,7 +148,7 @@ function Home() {
       color: "from-rose-400 to-pink-600",
       badge: 0,
     },
-  ] as const;
+  ] satisfies readonly HomeTile[];
 
   return (
     <div className="px-4 pt-6 max-w-md mx-auto pb-4">
@@ -199,24 +243,7 @@ function Home() {
         )}
       </div>
 
-      {/* Compact single-row action buttons */}
-      <div className="mt-4 grid grid-cols-5 gap-1.5">
-        {tiles.map((t) => (
-          <Link
-            key={t.to}
-            to={t.to}
-            className="group relative flex flex-col items-center gap-1.5 rounded-2xl bg-card border border-border shadow-card px-0.5 py-2.5 active:scale-95 transition-all hover:shadow-glow"
-          >
-            <UnreadBadge count={t.badge} className="top-1 right-0.5 -translate-y-0 translate-x-0" />
-            <div
-              className={`h-8 w-8 rounded-xl bg-gradient-to-br ${t.color} grid place-items-center group-hover:scale-110 transition-transform shadow-soft`}
-            >
-              <t.icon className="h-3.5 w-3.5 text-white" />
-            </div>
-            <span className="text-[9px] font-semibold text-center leading-tight text-foreground/90">{t.label}</span>
-          </Link>
-        ))}
-      </div>
+      <HomeActionCarousel tiles={tiles} />
 
       <PostWall />
     </div>

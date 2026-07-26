@@ -220,3 +220,14 @@ iframe[src*="lovable"],
   border-radius: 999px;
 }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* Hide scrollbar on swipeable nav strips */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
