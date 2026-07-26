@@ -358,6 +358,9 @@ async function handlePushNotify(request: Request, envBag: EnvBag): Promise<Respo
     target_channel: "push",
     headings: { en: title },
     contents: { en: body },
+    // Best-effort iOS home-screen badge bump (web Badging API covers installed PWAs).
+    ios_badgeType: "Increase",
+    ios_badgeCount: 1,
   };
   if (abs) {
     // OneSignal rejects `url` when `web_url` / `app_url` are set.

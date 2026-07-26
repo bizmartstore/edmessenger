@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { clearAppBadge, syncAppBadge, totalUnread } from "@/lib/app-badge";
 import { cn } from "@/lib/utils";
 
 export type UnreadSection = "classroom" | "dms" | "activities" | "lessons" | "quizzes" | "announcements";
@@ -13,6 +14,7 @@ export interface UnreadCounts {
   lessons: number;
   quizzes: number;
   announcements: number;
+  total: number;
 }
 
 const EMPTY: UnreadCounts = {
@@ -23,6 +25,7 @@ const EMPTY: UnreadCounts = {
   lessons: 0,
   quizzes: 0,
   announcements: 0,
+  total: 0,
 };
 
 interface UnreadCtx {
@@ -36,6 +39,19 @@ const Ctx = createContext<UnreadCtx | null>(null);
 /** Debounce window so chat bursts don't spam get_unread_counts RPC. */
 const REFRESH_DEBOUNCE_MS = 2500;
 
+function normalizeCounts(raw: Record<string, number>): UnreadCounts {
+  const classroom = Number(raw.classroom ?? 0);
+  const dms = Number(raw.dms ?? 0);
+  const chat = Number(raw.chat ?? classroom + dms);
+  const activities = Number(raw.activities ?? 0);
+  const lessons = Number(raw.lessons ?? 0);
+  const quizzes = Number(raw.quizzes ?? 0);
+  const announcements = Number(raw.announcements ?? 0);
+  const computed = totalUnread({ chat, activities, lessons, quizzes, announcements });
+  const total = Number(raw.total ?? computed);
+  return { classroom, dms, chat, activities, lessons, quizzes, announcements, total: total || computed };
+}
+
 export function UnreadBadgesProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [counts, setCounts] = useState<UnreadCounts>(EMPTY);
@@ -44,6 +60,7 @@ export function UnreadBadgesProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (!user) {
       setCounts(EMPTY);
+      void clearAppBadge();
       return;
     }
     const { data, error } = await supabase.rpc("get_unread_counts");
@@ -51,16 +68,9 @@ export function UnreadBadgesProvider({ children }: { children: ReactNode }) {
       setCounts(EMPTY);
       return;
     }
-    const raw = data as Record<string, number>;
-    setCounts({
-      classroom: Number(raw.classroom ?? 0),
-      dms: Number(raw.dms ?? 0),
-      chat: Number(raw.chat ?? 0),
-      activities: Number(raw.activities ?? 0),
-      lessons: Number(raw.lessons ?? 0),
-      quizzes: Number(raw.quizzes ?? 0),
-      announcements: Number(raw.announcements ?? 0),
-    });
+    const next = normalizeCounts(data as Record<string, number>);
+    setCounts(next);
+    void syncAppBadge(next.total);
   }, [user]);
 
   const scheduleRefresh = useCallback(() => {
@@ -89,6 +99,21 @@ export function UnreadBadgesProvider({ children }: { children: ReactNode }) {
     void refresh();
   }, [refresh]);
 
+  // Keep badge accurate when returning to the app / receiving a push while backgrounded
+  useEffect(() => {
+    if (!user) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") scheduleRefresh();
+    };
+    const onFocus = () => scheduleRefresh();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [user, scheduleRefresh]);
+
   // Realtime signals only — debounced RPC (not per-message REST)
   useEffect(() => {
     if (!user) return;
@@ -98,21 +123,21 @@ export function UnreadBadgesProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages" }, scheduleRefresh)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "activities" }, scheduleRefresh)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "lessons" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "reviewers" }, scheduleRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "quizzes" }, scheduleRefresh)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "announcements" }, scheduleRefresh)
       .subscribe();
 
-    const onVisible = () => {
-      if (document.visibilityState === "visible") scheduleRefresh();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      document.removeEventListener("visibilitychange", onVisible);
       supabase.removeChannel(ch);
     };
   }, [user, scheduleRefresh]);
+
+  // Clear badge on logout
+  useEffect(() => {
+    if (!user) void clearAppBadge();
+  }, [user]);
 
   return <Ctx.Provider value={{ counts, refresh, markRead }}>{children}</Ctx.Provider>;
 }

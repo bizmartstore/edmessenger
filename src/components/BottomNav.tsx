@@ -3,12 +3,20 @@ import { MessageCircle, BookOpen, ClipboardList, Home, FolderKanban } from "luci
 import { cn } from "@/lib/utils";
 import { UnreadBadge, useUnreadBadges } from "@/hooks/useUnreadBadges";
 
-const items = [
-  { to: "/", label: "Home", icon: Home, exact: true, badgeKey: null as null | "chat" | "activities" | "lessons" | "quizzes" },
-  { to: "/chat", label: "Chat", icon: MessageCircle, badgeKey: "chat" as const },
-  { to: "/activities", label: "Activity", icon: FolderKanban, badgeKey: "activities" as const },
-  { to: "/lessons", label: "Lessons", icon: BookOpen, badgeKey: "lessons" as const },
-  { to: "/quizzes", label: "Quizzes", icon: ClipboardList, badgeKey: "quizzes" as const },
+type BadgeKey = "announcements" | "chat" | "activities" | "lessons" | "quizzes";
+
+const items: {
+  to: "/" | "/chat" | "/activities" | "/lessons" | "/quizzes";
+  label: string;
+  icon: typeof Home;
+  exact?: boolean;
+  badgeKey: BadgeKey | null;
+}[] = [
+  { to: "/", label: "Home", icon: Home, exact: true, badgeKey: "announcements" },
+  { to: "/chat", label: "Chat", icon: MessageCircle, badgeKey: "chat" },
+  { to: "/activities", label: "Activity", icon: FolderKanban, badgeKey: "activities" },
+  { to: "/lessons", label: "Lessons", icon: BookOpen, badgeKey: "lessons" },
+  { to: "/quizzes", label: "Quizzes", icon: ClipboardList, badgeKey: "quizzes" },
 ];
 
 export function BottomNav() {
