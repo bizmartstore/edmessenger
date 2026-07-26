@@ -10,12 +10,14 @@ import {
   Sparkles,
   Trash2,
   X,
+  Reply,
+  ClipboardList,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { MessageComposer } from "@/components/MessageComposer";
+import { MessageComposer, type ReplyTarget } from "@/components/MessageComposer";
 import { AttachmentList } from "@/components/AttachmentList";
 import type { UploadedFile } from "@/lib/upload";
 import {
@@ -32,6 +34,7 @@ import { useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { notifyUsers } from "@/lib/push";
 import { fetchUploadQuota, type QuotaStatus } from "@/lib/upload-quota";
 import { GROUP_ICEBREAKERS, GROUP_REACTIONS } from "@/lib/social";
+import { GroupQuizzesPanel } from "@/components/GroupQuizzesPanel";
 
 export const Route = createFileRoute("/_app/group/$groupId")({
   component: GroupChatPage,
@@ -44,6 +47,7 @@ interface GroupInfo {
   has_password: boolean;
   member_count: number;
   is_member: boolean;
+  created_by?: string;
   pinned_message_id?: string | null;
 }
 
@@ -82,6 +86,8 @@ function GroupChatPage() {
   const [pollOpts, setPollOpts] = useState(["", ""]);
   const [pinnedPreview, setPinnedPreview] = useState<GroupMsg | null>(null);
   const [reactFor, setReactFor] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
+  const [quizOpen, setQuizOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -123,7 +129,7 @@ function GroupChatPage() {
     if (!user) return;
     const { data, error } = await supabase
       .from("group_messages")
-      .select("id, group_id, user_id, content, attachments, created_at, deleted_at, msg_type, meta")
+      .select("id, group_id, user_id, content, attachments, created_at, deleted_at, msg_type, meta, reply_to_id, reply_to_content, reply_to_name")
       .eq("group_id", groupId)
       .order("created_at", { ascending: false })
       .limit(MSG_LIMIT);
@@ -286,7 +292,7 @@ function GroupChatPage() {
     navigate({ to: "/chat" });
   }
 
-  async function send(text: string, attachments: UploadedFile[]) {
+  async function send(text: string, attachments: UploadedFile[], reply?: ReplyTarget | null) {
     if (!user) return;
     const { data, error } = await supabase
       .from("group_messages")
@@ -296,8 +302,11 @@ function GroupChatPage() {
         content: text,
         attachments: attachments.length ? attachments : null,
         msg_type: "text",
+        reply_to_id: reply?.id ?? null,
+        reply_to_content: reply ? (reply.content || "Attachment").slice(0, 160) : null,
+        reply_to_name: reply?.name ?? null,
       })
-      .select("id, group_id, user_id, content, attachments, created_at, deleted_at, msg_type, meta")
+      .select("id, group_id, user_id, content, attachments, created_at, deleted_at, msg_type, meta, reply_to_id, reply_to_content, reply_to_name")
       .single();
     if (error) throw error;
     if (data) {
@@ -335,6 +344,7 @@ function GroupChatPage() {
         content: "",
         attachments: null,
         meta: null,
+        reply_to_content: null,
       }),
     ]);
   }
@@ -502,6 +512,16 @@ function GroupChatPage() {
             >
               <BarChart3 className="h-3.5 w-3.5" /> Quick poll
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setQuizOpen(true);
+                setToolsOpen(false);
+              }}
+              className="col-span-2 py-2.5 rounded-xl bg-muted text-xs font-semibold hover:bg-secondary inline-flex items-center justify-center gap-1"
+            >
+              <ClipboardList className="h-3.5 w-3.5" /> Group quizzes
+            </button>
           </div>
           {pollOpen && (
             <div className="space-y-2 pt-1 border-t border-border">
@@ -626,6 +646,18 @@ function GroupChatPage() {
                     </div>
                   ) : (
                     <>
+                      {(m.reply_to_id || m.reply_to_content) && (
+                        <div
+                          className={`mb-1.5 rounded-xl px-2 py-1.5 text-[11px] border-l-2 ${
+                            mine
+                              ? "bg-white/15 border-white/50 text-primary-foreground/90"
+                              : "bg-muted border-primary/50 text-muted-foreground"
+                          }`}
+                        >
+                          <div className="font-semibold text-[10px] opacity-90">↪ {m.reply_to_name ?? "Student"}</div>
+                          <div className="truncate">{m.reply_to_content || "Message"}</div>
+                        </div>
+                      )}
                       {m.content && <div className="text-sm whitespace-pre-wrap break-words">{m.content}</div>}
                       <AttachmentList files={m.attachments} />
                     </>
@@ -655,6 +687,19 @@ function GroupChatPage() {
                     <button type="button" onClick={() => setReactFor((c) => (c === m.id ? null : m.id))} className="text-[10px] text-primary font-medium">
                       React
                     </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReplyTo({
+                          id: m.id,
+                          content: m.content || (m.attachments?.length ? "Attachment" : m.msg_type === "poll" ? "Poll" : ""),
+                          name,
+                        })
+                      }
+                      className="text-[10px] text-primary font-medium inline-flex items-center gap-0.5"
+                    >
+                      <Reply className="h-3 w-3" /> Reply
+                    </button>
                     <button type="button" onClick={() => void pin(m.id)} className="text-[10px] text-muted-foreground font-medium inline-flex items-center gap-0.5">
                       <Pin className="h-3 w-3" /> Pin
                     </button>
@@ -682,9 +727,25 @@ function GroupChatPage() {
       </div>
       <div className="pt-2 sticky bottom-0">
         {user && info?.is_member && (
-          <MessageComposer userId={user.id} onSend={send} placeholder={`Message ${info.name}…`} quotaScope="group" />
+          <MessageComposer
+            userId={user.id}
+            onSend={send}
+            placeholder={`Message ${info.name}…`}
+            quotaScope="group"
+            replyTo={replyTo}
+            onCancelReply={() => setReplyTo(null)}
+          />
         )}
       </div>
+      {quizOpen && user && info && (
+        <GroupQuizzesPanel
+          groupId={groupId}
+          groupName={info.name}
+          userId={user.id}
+          isOwner={info.created_by === user.id}
+          onClose={() => setQuizOpen(false)}
+        />
+      )}
     </div>
   );
 }

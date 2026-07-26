@@ -25,6 +25,9 @@ export interface GroupMsg {
   deleted_at?: string | null;
   msg_type?: string | null;
   meta?: Record<string, unknown> | null;
+  reply_to_id?: string | null;
+  reply_to_content?: string | null;
+  reply_to_name?: string | null;
   profiles?: { full_name: string | null; avatar_url: string | null } | null;
 }
 

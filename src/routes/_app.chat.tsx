@@ -18,6 +18,7 @@ import {
   Loader2,
   Circle,
 } from "lucide-react";
+import { CLASSROOM_REACTIONS } from "@/lib/social";
 import {
   appendClassroomCache,
   clearDmCache,
@@ -117,7 +118,15 @@ function ChatPage() {
   const [joinPass, setJoinPass] = useState("");
   const [joining, setJoining] = useState(false);
   const [deletingPeer, setDeletingPeer] = useState<string | null>(null);
+  const [reactions, setReactions] = useState<Record<string, Record<string, number>>>({});
+  const [reactFor, setReactFor] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const loadReactions = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    const { data } = await supabase.rpc("get_classroom_msg_reactions", { p_ids: ids });
+    if (data) setReactions(data as Record<string, Record<string, number>>);
+  }, []);
 
   useEffect(() => {
     if (tab === "class") void markRead("classroom");
@@ -130,12 +139,13 @@ function ChatPage() {
       const rows = await loadClassroomMessages();
       setClassroomCache(rows);
       setMessages(rows);
+      void loadReactions(rows.map((m) => m.id));
     } catch {
       /* keep cache */
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadReactions]);
 
   const refreshDms = useCallback(async () => {
     if (!user) return;
@@ -174,11 +184,14 @@ function ChatPage() {
         const id = (payload.old as { id?: string })?.id;
         if (id) setMessages([...removeClassroomCache(id)]);
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "classroom_msg_reactions" }, () => {
+        void loadReactions(getClassroomCache().map((m) => m.id));
+      })
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
     };
-  }, [refreshClassroom]);
+  }, [refreshClassroom, loadReactions]);
 
   useEffect(() => {
     if (tab !== "dms" || !user) return;
@@ -277,6 +290,16 @@ function ChatPage() {
         reply_to_content: null,
       }),
     ]);
+  }
+
+  async function reactClass(msgId: string, emoji: string) {
+    const { error } = await supabase.rpc("toggle_classroom_msg_reaction", { p_msg: msgId, p_emoji: emoji });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setReactFor(null);
+    void loadReactions(messages.map((m) => m.id));
   }
 
   async function createGroup() {
@@ -391,6 +414,7 @@ function ChatPage() {
               const mine = m.user_id === user?.id;
               const name = m.profiles?.full_name ?? "Student";
               const removed = Boolean(m.deleted_at);
+              const rx = reactions[m.id] ?? {};
               return (
                 <div key={m.id} className={`flex gap-2 ${mine ? "justify-end" : "justify-start"} animate-fade-up group/msg`}>
                   {!mine &&
@@ -438,8 +462,30 @@ function ChatPage() {
                         {formatDistanceToNow(new Date(m.created_at), { addSuffix: true })}
                       </div>
                     </div>
+                    {!removed && Object.keys(rx).length > 0 && (
+                      <div className={`flex flex-wrap gap-1 mt-1 ${mine ? "justify-end" : "justify-start"}`}>
+                        {Object.entries(rx).map(([e, n]) => (
+                          <button
+                            key={e}
+                            type="button"
+                            onClick={() => void reactClass(m.id, e)}
+                            className="text-[11px] rounded-full bg-card border border-border px-1.5 py-0.5 shadow-soft"
+                          >
+                            {e} {n}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {!removed && (
-                      <div className="mt-1 flex items-center gap-2">
+                      <div className={`mt-1 flex items-center gap-2 relative ${mine ? "justify-end" : "justify-start"}`}>
+                        <button
+                          type="button"
+                          title="React"
+                          onClick={() => setReactFor((c) => (c === m.id ? null : m.id))}
+                          className="inline-flex items-center gap-1 text-[10px] font-medium text-primary"
+                        >
+                          Like
+                        </button>
                         <button
                           type="button"
                           title="Reply"
@@ -463,6 +509,22 @@ function ChatPage() {
                           >
                             <Trash2 className="h-3 w-3" /> Remove
                           </button>
+                        )}
+                        {reactFor === m.id && (
+                          <div
+                            className={`absolute bottom-full mb-1 z-20 flex gap-1 rounded-2xl border border-border bg-card p-1.5 shadow-glow animate-pop ${mine ? "right-0" : "left-0"}`}
+                          >
+                            {CLASSROOM_REACTIONS.map((e) => (
+                              <button
+                                key={e}
+                                type="button"
+                                onClick={() => void reactClass(m.id, e)}
+                                className="h-8 w-8 rounded-xl text-base hover:bg-muted grid place-items-center"
+                              >
+                                {e}
+                              </button>
+                            ))}
+                          </div>
                         )}
                       </div>
                     )}

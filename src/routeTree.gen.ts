@@ -21,10 +21,12 @@ import { Route as AdminBannersRouteImport } from './routes/admin.banners'
 import { Route as AdminAttendanceRouteImport } from './routes/admin.attendance'
 import { Route as AdminAnnouncementsRouteImport } from './routes/admin.announcements'
 import { Route as AdminActivitiesRouteImport } from './routes/admin.activities'
+import { Route as AdminFeedbackRouteImport } from './routes/admin.feedback'
 import { Route as AppQuizzesRouteImport } from './routes/_app.quizzes'
 import { Route as AppProfileRouteImport } from './routes/_app.profile'
 import { Route as AppNotificationsRouteImport } from './routes/_app.notifications'
 import { Route as AppLessonsRouteImport } from './routes/_app.lessons'
+import { Route as AppFeedbackRouteImport } from './routes/_app.feedback'
 import { Route as AppChatRouteImport } from './routes/_app.chat'
 import { Route as AppAttendanceRouteImport } from './routes/_app.attendance'
 import { Route as AppActivitiesRouteImport } from './routes/_app.activities'
@@ -93,6 +95,11 @@ const AdminActivitiesRoute = AdminActivitiesRouteImport.update({
   path: '/activities',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminFeedbackRoute = AdminFeedbackRouteImport.update({
+  id: '/feedback',
+  path: '/feedback',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AppQuizzesRoute = AppQuizzesRouteImport.update({
   id: '/quizzes',
   path: '/quizzes',
@@ -111,6 +118,11 @@ const AppNotificationsRoute = AppNotificationsRouteImport.update({
 const AppLessonsRoute = AppLessonsRouteImport.update({
   id: '/lessons',
   path: '/lessons',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFeedbackRoute = AppFeedbackRouteImport.update({
+  id: '/feedback',
+  path: '/feedback',
   getParentRoute: () => AppRoute,
 } as any)
 const AppChatRoute = AppChatRouteImport.update({
@@ -161,6 +173,7 @@ export interface FileRoutesByFullPath {
   '/activities': typeof AppActivitiesRouteWithChildren
   '/attendance': typeof AppAttendanceRoute
   '/chat': typeof AppChatRoute
+  '/feedback': typeof AppFeedbackRoute
   '/lessons': typeof AppLessonsRoute
   '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
@@ -169,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/admin/announcements': typeof AdminAnnouncementsRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/banners': typeof AdminBannersRoute
+  '/admin/feedback': typeof AdminFeedbackRoute
   '/admin/lessons': typeof AdminLessonsRoute
   '/admin/quizzes': typeof AdminQuizzesRoute
   '/admin/students': typeof AdminStudentsRoute
@@ -184,6 +198,7 @@ export interface FileRoutesByTo {
   '/activities': typeof AppActivitiesRouteWithChildren
   '/attendance': typeof AppAttendanceRoute
   '/chat': typeof AppChatRoute
+  '/feedback': typeof AppFeedbackRoute
   '/lessons': typeof AppLessonsRoute
   '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
@@ -192,6 +207,7 @@ export interface FileRoutesByTo {
   '/admin/announcements': typeof AdminAnnouncementsRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/banners': typeof AdminBannersRoute
+  '/admin/feedback': typeof AdminFeedbackRoute
   '/admin/lessons': typeof AdminLessonsRoute
   '/admin/quizzes': typeof AdminQuizzesRoute
   '/admin/students': typeof AdminStudentsRoute
@@ -211,6 +227,7 @@ export interface FileRoutesById {
   '/_app/activities': typeof AppActivitiesRouteWithChildren
   '/_app/attendance': typeof AppAttendanceRoute
   '/_app/chat': typeof AppChatRoute
+  '/_app/feedback': typeof AppFeedbackRoute
   '/_app/lessons': typeof AppLessonsRoute
   '/_app/notifications': typeof AppNotificationsRoute
   '/_app/profile': typeof AppProfileRoute
@@ -219,6 +236,7 @@ export interface FileRoutesById {
   '/admin/announcements': typeof AdminAnnouncementsRoute
   '/admin/attendance': typeof AdminAttendanceRoute
   '/admin/banners': typeof AdminBannersRoute
+  '/admin/feedback': typeof AdminFeedbackRoute
   '/admin/lessons': typeof AdminLessonsRoute
   '/admin/quizzes': typeof AdminQuizzesRoute
   '/admin/students': typeof AdminStudentsRoute
@@ -239,6 +257,7 @@ export interface FileRouteTypes {
     | '/activities'
     | '/attendance'
     | '/chat'
+    | '/feedback'
     | '/lessons'
     | '/notifications'
     | '/profile'
@@ -247,6 +266,7 @@ export interface FileRouteTypes {
     | '/admin/announcements'
     | '/admin/attendance'
     | '/admin/banners'
+    | '/admin/feedback'
     | '/admin/lessons'
     | '/admin/quizzes'
     | '/admin/students'
@@ -262,6 +282,7 @@ export interface FileRouteTypes {
     | '/activities'
     | '/attendance'
     | '/chat'
+    | '/feedback'
     | '/lessons'
     | '/notifications'
     | '/profile'
@@ -270,6 +291,7 @@ export interface FileRouteTypes {
     | '/admin/announcements'
     | '/admin/attendance'
     | '/admin/banners'
+    | '/admin/feedback'
     | '/admin/lessons'
     | '/admin/quizzes'
     | '/admin/students'
@@ -288,6 +310,7 @@ export interface FileRouteTypes {
     | '/_app/activities'
     | '/_app/attendance'
     | '/_app/chat'
+    | '/_app/feedback'
     | '/_app/lessons'
     | '/_app/notifications'
     | '/_app/profile'
@@ -296,6 +319,7 @@ export interface FileRouteTypes {
     | '/admin/announcements'
     | '/admin/attendance'
     | '/admin/banners'
+    | '/admin/feedback'
     | '/admin/lessons'
     | '/admin/quizzes'
     | '/admin/students'
@@ -400,6 +424,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminActivitiesRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/feedback': {
+      id: '/admin/feedback'
+      path: '/feedback'
+      fullPath: '/admin/feedback'
+      preLoaderRoute: typeof AdminFeedbackRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/_app/quizzes': {
       id: '/_app/quizzes'
       path: '/quizzes'
@@ -426,6 +457,13 @@ declare module '@tanstack/react-router' {
       path: '/lessons'
       fullPath: '/lessons'
       preLoaderRoute: typeof AppLessonsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/feedback': {
+      id: '/_app/feedback'
+      path: '/feedback'
+      fullPath: '/feedback'
+      preLoaderRoute: typeof AppFeedbackRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/chat': {
@@ -515,6 +553,7 @@ interface AppRouteChildren {
   AppActivitiesRoute: typeof AppActivitiesRouteWithChildren
   AppAttendanceRoute: typeof AppAttendanceRoute
   AppChatRoute: typeof AppChatRoute
+  AppFeedbackRoute: typeof AppFeedbackRoute
   AppLessonsRoute: typeof AppLessonsRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
   AppProfileRoute: typeof AppProfileRoute
@@ -529,6 +568,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppActivitiesRoute: AppActivitiesRouteWithChildren,
   AppAttendanceRoute: AppAttendanceRoute,
   AppChatRoute: AppChatRoute,
+  AppFeedbackRoute: AppFeedbackRoute,
   AppLessonsRoute: AppLessonsRoute,
   AppNotificationsRoute: AppNotificationsRoute,
   AppProfileRoute: AppProfileRoute,
@@ -546,6 +586,7 @@ interface AdminRouteChildren {
   AdminAnnouncementsRoute: typeof AdminAnnouncementsRoute
   AdminAttendanceRoute: typeof AdminAttendanceRoute
   AdminBannersRoute: typeof AdminBannersRoute
+  AdminFeedbackRoute: typeof AdminFeedbackRoute
   AdminLessonsRoute: typeof AdminLessonsRoute
   AdminQuizzesRoute: typeof AdminQuizzesRoute
   AdminStudentsRoute: typeof AdminStudentsRoute
@@ -557,6 +598,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminAnnouncementsRoute: AdminAnnouncementsRoute,
   AdminAttendanceRoute: AdminAttendanceRoute,
   AdminBannersRoute: AdminBannersRoute,
+  AdminFeedbackRoute: AdminFeedbackRoute,
   AdminLessonsRoute: AdminLessonsRoute,
   AdminQuizzesRoute: AdminQuizzesRoute,
   AdminStudentsRoute: AdminStudentsRoute,

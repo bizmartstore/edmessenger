@@ -1,5 +1,6 @@
 export const WALL_REACTIONS = ["❤️", "👍", "😂", "😮", "😢", "🔥", "🎉", "👏"] as const;
 export const GROUP_REACTIONS = ["👍", "❤️", "😂", "🎉", "🔥", "👀"] as const;
+export const CLASSROOM_REACTIONS = GROUP_REACTIONS;
 
 export const WALL_FEELINGS = [
   { emoji: "😊", label: "happy" },

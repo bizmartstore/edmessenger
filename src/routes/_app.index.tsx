@@ -11,6 +11,7 @@ import {
   UserRound,
   Megaphone,
   FolderKanban,
+  Lightbulb,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { BannerCarousel } from "@/components/BannerCarousel";
@@ -95,6 +96,13 @@ function Home() {
       label: "Quizzes",
       color: "from-emerald-400 to-teal-500",
       badge: counts.quizzes,
+    },
+    {
+      to: "/feedback",
+      icon: Lightbulb,
+      label: "Feedback",
+      color: "from-rose-400 to-pink-600",
+      badge: 0,
     },
   ] as const;
 
@@ -192,20 +200,20 @@ function Home() {
       </div>
 
       {/* Compact single-row action buttons */}
-      <div className="mt-4 grid grid-cols-4 gap-2">
+      <div className="mt-4 grid grid-cols-5 gap-1.5">
         {tiles.map((t) => (
           <Link
             key={t.to}
             to={t.to}
-            className="group relative flex flex-col items-center gap-1.5 rounded-2xl bg-card border border-border shadow-card px-1 py-2.5 active:scale-95 transition-all hover:shadow-glow"
+            className="group relative flex flex-col items-center gap-1.5 rounded-2xl bg-card border border-border shadow-card px-0.5 py-2.5 active:scale-95 transition-all hover:shadow-glow"
           >
-            <UnreadBadge count={t.badge} className="top-1 right-1 -translate-y-0 translate-x-0" />
+            <UnreadBadge count={t.badge} className="top-1 right-0.5 -translate-y-0 translate-x-0" />
             <div
-              className={`h-9 w-9 rounded-xl bg-gradient-to-br ${t.color} grid place-items-center group-hover:scale-110 transition-transform shadow-soft`}
+              className={`h-8 w-8 rounded-xl bg-gradient-to-br ${t.color} grid place-items-center group-hover:scale-110 transition-transform shadow-soft`}
             >
-              <t.icon className="h-4 w-4 text-white" />
+              <t.icon className="h-3.5 w-3.5 text-white" />
             </div>
-            <span className="text-[10px] font-semibold text-center leading-tight text-foreground/90">{t.label}</span>
+            <span className="text-[9px] font-semibold text-center leading-tight text-foreground/90">{t.label}</span>
           </Link>
         ))}
       </div>

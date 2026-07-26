@@ -15,7 +15,8 @@ export type NotifCategory =
   | "activity"
   | "quiz"
   | "submission"
-  | "new_user";
+  | "new_user"
+  | "feedback";
 
 export interface NotifCategoryMeta {
   key: NotifCategory;
@@ -35,6 +36,7 @@ export const NOTIF_CATEGORIES: NotifCategoryMeta[] = [
   { key: "quiz", label: "New quizzes", description: "Admin posts a new quiz", audience: "student" },
   { key: "submission", label: "Student submissions", description: "A student submits a quiz or activity", audience: "admin" },
   { key: "new_user", label: "New students", description: "A new student signs in for the first time", audience: "admin" },
+  { key: "feedback", label: "App feedback", description: "A student submits feature feedback or suggestions", audience: "admin" },
 ];
 
 export type NotifPrefs = Record<NotifCategory, boolean>;
@@ -50,6 +52,7 @@ const DEFAULT_PREFS: NotifPrefs = {
   quiz: true,
   submission: true,
   new_user: true,
+  feedback: true,
 };
 
 function storageKey(userId: string): string {

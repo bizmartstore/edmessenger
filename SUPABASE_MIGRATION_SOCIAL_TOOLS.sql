@@ -219,12 +219,11 @@ grant execute on function public.toggle_wall_reaction(uuid, text) to authenticat
 
 -- ═══════════════════════════════════════════
 -- 3) Group tools: soft-delete, reactions, polls, pin
+-- msg_type values: text | poll | system
 -- ═══════════════════════════════════════════
-alter table public.group_messages
-  add column if not exists deleted_at timestamptz,
-  add column if not exists msg_type text not null default 'text';
-  -- text | poll | system
-  add column if not exists meta jsonb;
+alter table public.group_messages add column if not exists deleted_at timestamptz;
+alter table public.group_messages add column if not exists msg_type text not null default 'text';
+alter table public.group_messages add column if not exists meta jsonb;
 
 grant update on public.group_messages to authenticated;
 
@@ -391,7 +390,7 @@ begin
   end if;
   opts := array(select trim(x) from unnest(p_options) x where length(trim(x)) > 0);
   if cardinality(opts) < 2 or cardinality(opts) > 4 then
-    raise exception 'Poll needs 2–4 options';
+    raise exception 'Poll needs 2-4 options';
   end if;
   if length(trim(p_question)) < 2 then raise exception 'Question required'; end if;
 
@@ -472,7 +471,7 @@ as $$
 $$;
 grant execute on function public.get_group_poll_results(uuid) to authenticated;
 
--- Pin a message (UUID only — tiny)
+-- Pin a message (UUID only)
 alter table public.chat_groups
   add column if not exists pinned_message_id uuid;
 

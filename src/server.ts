@@ -352,7 +352,11 @@ async function handlePushNotify(request: Request, envBag: EnvBag): Promise<Respo
     return jsonResponse({ ok: false, error: "ONESIGNAL_REST_API_KEY not configured" }, 503, cors);
   }
   const appId = resolveAppId(envBag);
-  const abs = absoluteUrl(new URL(request.url).origin, payload.url);
+  const originUrl = new URL(request.url).origin;
+  const abs = absoluteUrl(originUrl, payload.url);
+  // Custom notification icon (replaces default bell on many Android/Chrome builds).
+  // Does not change audience targeting or delivery flow — icon fields only.
+  const iconUrl = `${originUrl}/icons/icon-192.png`;
   const base: Record<string, unknown> = {
     app_id: appId,
     target_channel: "push",
@@ -361,6 +365,10 @@ async function handlePushNotify(request: Request, envBag: EnvBag): Promise<Respo
     // Best-effort iOS home-screen badge bump (web Badging API covers installed PWAs).
     ios_badgeType: "Increase",
     ios_badgeCount: 1,
+    chrome_web_icon: iconUrl,
+    chrome_web_badge: iconUrl,
+    firefox_icon: iconUrl,
+    large_icon: iconUrl,
   };
   if (abs) {
     // OneSignal rejects `url` when `web_url` / `app_url` are set.
