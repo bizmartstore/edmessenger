@@ -527,54 +527,87 @@ Rules:
   {"question":"...","options":["...","...","...","..."],"correct_index":0,"explanation":"..."}
 - correct_index is 0-based`;
 
+  // Prefer current free-tier Flash models; 2.0-flash often has limit:0 on exhausted projects.
+  const models = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"];
+
   try {
-    const geminiUrl =
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const res = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.4,
-          responseMimeType: "application/json",
-        },
-      }),
-    });
-    const text = await res.text();
-    let parsed: unknown = text;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      // keep raw
-    }
-    if (!res.ok) {
-      const errMsg =
-        typeof parsed === "object" && parsed && "error" in (parsed as object)
-          ? JSON.stringify((parsed as { error?: unknown }).error)
-          : `Gemini HTTP ${res.status}`;
-      return jsonResponse({ ok: false, error: errMsg }, 502, cors);
+    let lastError = "Gemini request failed";
+    for (const model of models) {
+      const geminiUrl =
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(geminiUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.4,
+            responseMimeType: "application/json",
+          },
+        }),
+      });
+      const text = await res.text();
+      let parsed: unknown = text;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        // keep raw
+      }
+
+      if (!res.ok) {
+        const geminiErr =
+          typeof parsed === "object" && parsed && "error" in (parsed as object)
+            ? (parsed as { error?: { code?: number; message?: string; status?: string } }).error
+            : undefined;
+        const msg = geminiErr?.message || `Gemini HTTP ${res.status}`;
+        lastError = msg;
+        // Try next model on quota / not found; fail fast on auth errors
+        if (geminiErr?.code === 401 || geminiErr?.code === 403) {
+          return jsonResponse({ ok: false, error: friendlyGeminiError(msg) }, 502, cors);
+        }
+        if (res.status === 429 || /quota|RESOURCE_EXHAUSTED|not found|NOT_FOUND/i.test(msg)) {
+          continue;
+        }
+        return jsonResponse({ ok: false, error: friendlyGeminiError(msg) }, 502, cors);
+      }
+
+      const candidates =
+        typeof parsed === "object" && parsed && "candidates" in (parsed as object)
+          ? (parsed as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }).candidates
+          : undefined;
+      const rawText = candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("\n") ?? "";
+      if (!rawText.trim()) {
+        lastError = `Gemini (${model}) returned empty content`;
+        continue;
+      }
+
+      const questions = normalizeGeneratedQuestions(extractGeminiJson(rawText), count);
+      if (!questions.length) {
+        lastError = `Could not parse Gemini (${model}) questions`;
+        continue;
+      }
+      return jsonResponse({ ok: true, questions, model }, 200, cors);
     }
 
-    const candidates =
-      typeof parsed === "object" && parsed && "candidates" in (parsed as object)
-        ? (parsed as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }).candidates
-        : undefined;
-    const rawText = candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("\n") ?? "";
-    if (!rawText.trim()) {
-      return jsonResponse({ ok: false, error: "Gemini returned empty content" }, 502, cors);
-    }
-
-    const questions = normalizeGeneratedQuestions(extractGeminiJson(rawText), count);
-    if (!questions.length) {
-      return jsonResponse({ ok: false, error: "Could not parse Gemini questions" }, 502, cors);
-    }
-    return jsonResponse({ ok: true, questions }, 200, cors);
+    return jsonResponse({ ok: false, error: friendlyGeminiError(lastError) }, 502, cors);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Gemini failed";
     console.error("generate reviewer failed", err);
-    return jsonResponse({ ok: false, error: message }, 502, cors);
+    return jsonResponse({ ok: false, error: friendlyGeminiError(message) }, 502, cors);
   }
+}
+
+function friendlyGeminiError(raw: string): string {
+  if (/quota|RESOURCE_EXHAUSTED|exceeded your current quota|rate.?limit/i.test(raw)) {
+    return (
+      "Gemini free quota exceeded for this API key. Wait a minute and retry, " +
+      "check https://aistudio.google.com/rate-limit, enable billing, or create a new API key. " +
+      "You can still use Paste details for now."
+    );
+  }
+  // Avoid dumping huge JSON blobs into the toast
+  if (raw.length > 280) return `${raw.slice(0, 280)}…`;
+  return raw;
 }
 
 function handleGeminiHealth(envBag: EnvBag): Response {
