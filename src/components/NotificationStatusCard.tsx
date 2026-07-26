@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { Bell, BellOff, CheckCircle2, Send, Smartphone } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { getPushStatus, requestPushPermission, subscribePushChange, type PushStatus } from "@/lib/onesignal";
+import {
+  getPushStatus,
+  onPushStatusChanged,
+  requestPushPermission,
+  subscribePushChange,
+  type PushStatus,
+} from "@/lib/onesignal";
 import { notifyUsers } from "@/lib/push";
 import { toast } from "sonner";
 
@@ -24,11 +30,13 @@ export function NotificationStatusCard({ userId }: Props) {
     }
     void refresh();
     const unsub = subscribePushChange(userId, role, () => void refresh());
+    const unsubEvt = onPushStatusChanged(() => void refresh());
     const onVis = () => document.visibilityState === "visible" && void refresh();
     document.addEventListener("visibilitychange", onVis);
     return () => {
       cancelled = true;
       unsub();
+      unsubEvt();
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [userId, role]);

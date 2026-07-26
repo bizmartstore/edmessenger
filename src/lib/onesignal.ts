@@ -35,6 +35,24 @@ declare global {
 
 let initPromise: Promise<OneSignalSDK> | null = null;
 let identifiedUserId: string | null = null;
+let lastSyncAt: number | null = null;
+
+const PUSH_EVENT = "edm:push-status-changed";
+
+export function emitPushStatusChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(PUSH_EVENT));
+}
+
+export function onPushStatusChanged(listener: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(PUSH_EVENT, listener);
+  return () => window.removeEventListener(PUSH_EVENT, listener);
+}
+
+export function getLastSyncAt(): number | null {
+  return lastSyncAt;
+}
 
 function ensureScript(): void {
   if (typeof document === "undefined") return;
@@ -132,6 +150,68 @@ export async function identifyOneSignalUser(userId: string): Promise<void> {
 
   await OneSignal.login(userId);
   identifiedUserId = userId;
+  lastSyncAt = Date.now();
+  emitPushStatusChanged();
+}
+
+/**
+ * Clears OneSignal + push-subscription state so a stale/404 subscription can
+ * be rebuilt from scratch on the next opt-in. Safe to call when signed out.
+ */
+export async function resetPushRegistration(): Promise<void> {
+  identifiedUserId = null;
+  initPromise = null;
+  try {
+    if (typeof indexedDB !== "undefined") {
+      const dbs = ["ONE_SIGNAL_SDK_DB"];
+      await Promise.all(
+        dbs.map(
+          (name) =>
+            new Promise<void>((resolve) => {
+              const req = indexedDB.deleteDatabase(name);
+              req.onsuccess = req.onerror = req.onblocked = () => resolve();
+            }),
+        ),
+      );
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(
+        regs
+          .filter((r) => /OneSignalSDKWorker/.test(r.active?.scriptURL ?? "") || /OneSignalSDKWorker/.test(r.installing?.scriptURL ?? ""))
+          .map((r) => r.unregister()),
+      );
+    }
+  } catch {
+    // ignore
+  }
+  lastSyncAt = Date.now();
+  emitPushStatusChanged();
+}
+
+export async function getWorkerInfo(): Promise<{
+  scope: string;
+  scriptURL: string;
+  state: string;
+} | null> {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return null;
+  try {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    const reg = regs.find((r) => /OneSignalSDKWorker/.test(r.active?.scriptURL ?? r.installing?.scriptURL ?? ""));
+    if (!reg) return null;
+    const sw = reg.active ?? reg.installing ?? reg.waiting;
+    return {
+      scope: reg.scope,
+      scriptURL: sw?.scriptURL ?? "",
+      state: sw?.state ?? "unknown",
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function logoutOneSignal(): Promise<void> {

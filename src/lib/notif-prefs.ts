@@ -1,0 +1,109 @@
+/**
+ * Per-user notification category preferences.
+ * Stored in localStorage per userId. Also mirrored as OneSignal user tags
+ * (notif_<key> = "on" | "off") so server-side filtering can be layered on later.
+ */
+import { initOneSignal } from "@/lib/onesignal";
+
+export type NotifCategory =
+  | "dm"
+  | "classroom"
+  | "announcement"
+  | "lesson"
+  | "activity"
+  | "quiz"
+  | "submission"
+  | "new_user";
+
+export interface NotifCategoryMeta {
+  key: NotifCategory;
+  label: string;
+  description: string;
+  audience: "student" | "admin" | "both";
+}
+
+export const NOTIF_CATEGORIES: NotifCategoryMeta[] = [
+  { key: "dm", label: "Private messages", description: "Someone sends you a direct message", audience: "both" },
+  { key: "classroom", label: "Classroom chat", description: "New message in the classroom group chat", audience: "both" },
+  { key: "announcement", label: "Announcements", description: "Admin posts a new announcement", audience: "student" },
+  { key: "lesson", label: "New lessons", description: "Admin uploads a new lesson or module", audience: "student" },
+  { key: "activity", label: "New activities", description: "Admin posts a new activity", audience: "student" },
+  { key: "quiz", label: "New quizzes", description: "Admin posts a new quiz", audience: "student" },
+  { key: "submission", label: "Student submissions", description: "A student submits a quiz or activity", audience: "admin" },
+  { key: "new_user", label: "New students", description: "A new student signs in for the first time", audience: "admin" },
+];
+
+export type NotifPrefs = Record<NotifCategory, boolean>;
+
+const DEFAULT_PREFS: NotifPrefs = {
+  dm: true,
+  classroom: true,
+  announcement: true,
+  lesson: true,
+  activity: true,
+  quiz: true,
+  submission: true,
+  new_user: true,
+};
+
+function storageKey(userId: string): string {
+  return `edm:notif-prefs:${userId}`;
+}
+
+export function getNotifPrefs(userId: string): NotifPrefs {
+  if (typeof window === "undefined") return { ...DEFAULT_PREFS };
+  try {
+    const raw = window.localStorage.getItem(storageKey(userId));
+    if (!raw) return { ...DEFAULT_PREFS };
+    const parsed = JSON.parse(raw) as Partial<NotifPrefs>;
+    return { ...DEFAULT_PREFS, ...parsed };
+  } catch {
+    return { ...DEFAULT_PREFS };
+  }
+}
+
+export function setNotifPref(userId: string, key: NotifCategory, value: boolean): NotifPrefs {
+  const next = { ...getNotifPrefs(userId), [key]: value };
+  try {
+    window.localStorage.setItem(storageKey(userId), JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+  // Mirror into OneSignal tags (best-effort, non-blocking).
+  void (async () => {
+    try {
+      const OneSignal = await initOneSignal();
+      const user = (OneSignal as unknown as {
+        User?: { addTag?: (k: string, v: string) => void | Promise<void> };
+      }).User;
+      user?.addTag?.(`notif_${key}`, value ? "on" : "off");
+    } catch {
+      // ignore
+    }
+  })();
+  return next;
+}
+
+export function isCategoryMuted(userId: string | null | undefined, key: NotifCategory): boolean {
+  if (!userId) return false;
+  return getNotifPrefs(userId)[key] === false;
+}
+
+export function syncAllTags(userId: string): void {
+  const prefs = getNotifPrefs(userId);
+  void (async () => {
+    try {
+      const OneSignal = await initOneSignal();
+      const user = (OneSignal as unknown as {
+        User?: { addTags?: (tags: Record<string, string>) => void | Promise<void> };
+      }).User;
+      const tags: Record<string, string> = {};
+      for (const cat of NOTIF_CATEGORIES) {
+        tags[`notif_${cat.key}`] = prefs[cat.key] ? "on" : "off";
+      }
+      user?.addTags?.(tags);
+    } catch {
+      // ignore
+    }
+  })();
+}
