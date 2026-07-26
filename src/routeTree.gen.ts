@@ -23,6 +23,7 @@ import { Route as AdminAnnouncementsRouteImport } from './routes/admin.announcem
 import { Route as AdminActivitiesRouteImport } from './routes/admin.activities'
 import { Route as AppQuizzesRouteImport } from './routes/_app.quizzes'
 import { Route as AppProfileRouteImport } from './routes/_app.profile'
+import { Route as AppNotificationsRouteImport } from './routes/_app.notifications'
 import { Route as AppLessonsRouteImport } from './routes/_app.lessons'
 import { Route as AppChatRouteImport } from './routes/_app.chat'
 import { Route as AppAttendanceRouteImport } from './routes/_app.attendance'
@@ -100,6 +101,11 @@ const AppProfileRoute = AppProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => AppRoute,
 } as any)
+const AppNotificationsRoute = AppNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppLessonsRoute = AppLessonsRouteImport.update({
   id: '/lessons',
   path: '/lessons',
@@ -144,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/attendance': typeof AppAttendanceRoute
   '/chat': typeof AppChatRoute
   '/lessons': typeof AppLessonsRoute
+  '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
   '/quizzes': typeof AppQuizzesRouteWithChildren
   '/admin/activities': typeof AdminActivitiesRoute
@@ -164,6 +171,7 @@ export interface FileRoutesByTo {
   '/attendance': typeof AppAttendanceRoute
   '/chat': typeof AppChatRoute
   '/lessons': typeof AppLessonsRoute
+  '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
   '/quizzes': typeof AppQuizzesRouteWithChildren
   '/admin/activities': typeof AdminActivitiesRoute
@@ -188,6 +196,7 @@ export interface FileRoutesById {
   '/_app/attendance': typeof AppAttendanceRoute
   '/_app/chat': typeof AppChatRoute
   '/_app/lessons': typeof AppLessonsRoute
+  '/_app/notifications': typeof AppNotificationsRoute
   '/_app/profile': typeof AppProfileRoute
   '/_app/quizzes': typeof AppQuizzesRouteWithChildren
   '/admin/activities': typeof AdminActivitiesRoute
@@ -213,6 +222,7 @@ export interface FileRouteTypes {
     | '/attendance'
     | '/chat'
     | '/lessons'
+    | '/notifications'
     | '/profile'
     | '/quizzes'
     | '/admin/activities'
@@ -233,6 +243,7 @@ export interface FileRouteTypes {
     | '/attendance'
     | '/chat'
     | '/lessons'
+    | '/notifications'
     | '/profile'
     | '/quizzes'
     | '/admin/activities'
@@ -256,6 +267,7 @@ export interface FileRouteTypes {
     | '/_app/attendance'
     | '/_app/chat'
     | '/_app/lessons'
+    | '/_app/notifications'
     | '/_app/profile'
     | '/_app/quizzes'
     | '/admin/activities'
@@ -378,6 +390,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProfileRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/notifications': {
+      id: '/_app/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof AppNotificationsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/lessons': {
       id: '/_app/lessons'
       path: '/lessons'
@@ -459,6 +478,7 @@ interface AppRouteChildren {
   AppAttendanceRoute: typeof AppAttendanceRoute
   AppChatRoute: typeof AppChatRoute
   AppLessonsRoute: typeof AppLessonsRoute
+  AppNotificationsRoute: typeof AppNotificationsRoute
   AppProfileRoute: typeof AppProfileRoute
   AppQuizzesRoute: typeof AppQuizzesRouteWithChildren
   AppIndexRoute: typeof AppIndexRoute
@@ -470,6 +490,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAttendanceRoute: AppAttendanceRoute,
   AppChatRoute: AppChatRoute,
   AppLessonsRoute: AppLessonsRoute,
+  AppNotificationsRoute: AppNotificationsRoute,
   AppProfileRoute: AppProfileRoute,
   AppQuizzesRoute: AppQuizzesRouteWithChildren,
   AppIndexRoute: AppIndexRoute,

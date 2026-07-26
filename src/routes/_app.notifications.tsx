@@ -65,8 +65,7 @@ function NotificationsPage() {
   const visibleCategories = useMemo(() => {
     return NOTIF_CATEGORIES.filter((c) => {
       if (c.audience === "both") return true;
-      if (isAdmin) return c.audience === "admin" || c.audience === "both";
-      return c.audience === "student" || c.audience === "both";
+      return isAdmin ? c.audience === "admin" : c.audience === "student";
     });
   }, [isAdmin]);
 
