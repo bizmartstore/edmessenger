@@ -207,6 +207,16 @@ function ProfilePage() {
         </button>
       </div>
       {user && <NotificationStatusCard userId={user.id} />}
+      <Link
+        to="/notifications"
+        className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-card border border-border p-4 shadow-card hover:bg-muted/40"
+      >
+        <div>
+          <div className="text-sm font-semibold">Notification preferences</div>
+          <div className="text-[11px] text-muted-foreground">Categories, tester & debug panel</div>
+        </div>
+        <span className="text-primary text-sm">›</span>
+      </Link>
 
 
       <section className="mt-6">
