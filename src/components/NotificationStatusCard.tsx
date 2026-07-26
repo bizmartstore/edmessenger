@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bell, BellOff, CheckCircle2, Send, Smartphone } from "lucide-react";
-import { getPushStatus, subscribePushChange, type PushStatus } from "@/lib/onesignal";
+import { getPushStatus, onPushStatusChanged, subscribePushChange, type PushStatus } from "@/lib/onesignal";
 import { notifyUsers } from "@/lib/push";
 import { toast } from "sonner";
 
