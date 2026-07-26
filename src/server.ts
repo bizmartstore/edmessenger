@@ -354,9 +354,9 @@ async function handlePushNotify(request: Request, envBag: EnvBag): Promise<Respo
   const appId = resolveAppId(envBag);
   const originUrl = new URL(request.url).origin;
   const abs = absoluteUrl(originUrl, payload.url);
-  // Custom notification icon (replaces default bell on many Android/Chrome builds).
-  // Does not change audience targeting or delivery flow — icon fields only.
-  const iconUrl = `${originUrl}/icons/icon-192.png`;
+  // Use the EdMessenger logo instead of OneSignal's default bell icon.
+  // Per-notification override — does not change audience targeting or delivery.
+  const iconUrl = `${originUrl}/logo-pwa.png`;
   const base: Record<string, unknown> = {
     app_id: appId,
     target_channel: "push",
@@ -369,6 +369,7 @@ async function handlePushNotify(request: Request, envBag: EnvBag): Promise<Respo
     chrome_web_badge: iconUrl,
     firefox_icon: iconUrl,
     large_icon: iconUrl,
+    huawei_large_icon: iconUrl,
   };
   if (abs) {
     // OneSignal rejects `url` when `web_url` / `app_url` are set.
