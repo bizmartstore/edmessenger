@@ -117,7 +117,7 @@ function Home() {
               className="h-12 w-12 rounded-2xl object-cover shadow-card ring-2 ring-primary/20"
             />
           ) : (
-            <img src="/logo.png" alt="EdMessenger" className="h-12 w-12 rounded-2xl object-cover shadow-card" />
+            <img src="/logo.png?v=3" alt="EdMessenger" className="h-12 w-12 rounded-2xl object-contain bg-white p-0.5 shadow-card" />
           )}
         </Link>
         <Link to="/profile" className="min-w-0 flex-1">

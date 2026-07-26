@@ -41,7 +41,7 @@ function AdminLayout() {
       <header className="sticky top-0 z-20 bg-background/85 backdrop-blur-lg border-b border-border">
         <div className="max-w-3xl mx-auto flex items-center gap-3 px-4 py-3">
           <Link to="/" className="p-2 -ml-2 rounded-xl hover:bg-muted"><ArrowLeft className="h-4 w-4" /></Link>
-          <img src="/logo-pwa.png" alt="" className="h-9 w-9 rounded-xl object-cover" />
+          <img src="/logo-pwa.png?v=3" alt="" className="h-9 w-9 rounded-xl object-contain bg-white p-0.5" />
           <div className="min-w-0 flex-1">
             <div className="font-bold text-sm">Admin</div>
             <div className="text-[10px] text-muted-foreground">Educator dashboard</div>

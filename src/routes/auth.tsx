@@ -39,9 +39,9 @@ function AuthPage() {
     <div className="min-h-screen flex flex-col safe-top">
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 max-w-md mx-auto w-full">
         <img
-          src="/logo.png"
+          src="/logo.png?v=3"
           alt="EdMessenger"
-          className="w-20 h-20 rounded-full shadow-glow mb-6 animate-pop object-contain bg-white p-1.5"
+          className="w-24 h-24 rounded-2xl shadow-glow mb-6 animate-pop object-contain bg-white p-1.5"
         />
         <h1 className="text-4xl font-extrabold tracking-tight text-center animate-fade-up">
           Welcome to{" "}
