@@ -46,7 +46,7 @@ export function sendPushNotification(payload: PushPayload): void {
         // still attempt without auth
       }
 
-      await fetch("/api/push/notify", {
+      const res = await fetch("/api/push/notify", {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -57,8 +57,31 @@ export function sendPushNotification(payload: PushPayload): void {
         }),
         keepalive: true,
       });
-    } catch {
-      // non-fatal
+
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const json = (await res.json()) as { error?: string };
+          if (json?.error) detail = json.error;
+        } catch {
+          // ignore
+        }
+        console.error("[push] notify failed:", detail);
+        try {
+          const { toast } = await import("sonner");
+          if (res.status === 503) {
+            toast.error("Push server not configured (missing OneSignal REST key)");
+          } else if (res.status === 401) {
+            toast.error("Push failed: sign in again");
+          } else {
+            toast.error(`Push failed: ${detail}`);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    } catch (err) {
+      console.error("[push] notify network error", err);
     }
   })();
 }

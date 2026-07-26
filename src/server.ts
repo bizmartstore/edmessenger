@@ -13,19 +13,61 @@ type EnvBag = {
   ONESIGNAL_APP_ID?: string;
 };
 
-type CloudflareGlobal = typeof globalThis & { __env__?: EnvBag };
+type CloudflareGlobal = typeof globalThis & {
+  __env__?: EnvBag;
+  process?: { env?: Record<string, string | undefined> };
+};
+
+type RequestWithCf = Request & {
+  runtime?: { cloudflare?: { env?: EnvBag } };
+};
+
+/**
+ * Read a binding by direct property access.
+ * Do NOT Object-spread Cloudflare `env` — secrets are often non-enumerable
+ * on the Workers Env object, so `{ ...env }` silently drops ONESIGNAL_REST_API_KEY.
+ */
+function readStringBinding(source: unknown, key: keyof EnvBag): string | undefined {
+  if (!source || typeof source !== "object") return undefined;
+  try {
+    const value = (source as Record<string, unknown>)[key];
+    return typeof value === "string" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function nitroEnv(): EnvBag | undefined {
+  return (globalThis as CloudflareGlobal).__env__;
+}
+
+function requestEnv(request?: Request): EnvBag | undefined {
+  if (!request) return undefined;
+  return (request as RequestWithCf).runtime?.cloudflare?.env;
+}
 
 /**
  * Nitro's Cloudflare preset sets globalThis.__env__, then calls the SSR
  * entry as `fetch(request)` only — so the `env` arg is often undefined.
- * Always merge both so Worker bindings remain visible.
+ * Prefer fetch `env`, then request.runtime.cloudflare.env, then Nitro global, then process.env.
  */
-function resolveEnv(env: unknown): EnvBag {
-  const arg = env && typeof env === "object" ? (env as EnvBag) : {};
-  const fromNitro = (globalThis as CloudflareGlobal).__env__;
+function resolveEnv(env: unknown, request?: Request): EnvBag {
+  const fromArg = env && typeof env === "object" ? (env as EnvBag) : undefined;
+  const fromReq = requestEnv(request);
+  const fromNitro = nitroEnv();
+  const fromProcess = (globalThis as CloudflareGlobal).process?.env;
   return {
-    ...fromNitro,
-    ...arg,
+    ASSETS: fromArg?.ASSETS ?? fromReq?.ASSETS ?? fromNitro?.ASSETS,
+    ONESIGNAL_REST_API_KEY:
+      readStringBinding(fromArg, "ONESIGNAL_REST_API_KEY") ||
+      readStringBinding(fromReq, "ONESIGNAL_REST_API_KEY") ||
+      readStringBinding(fromNitro, "ONESIGNAL_REST_API_KEY") ||
+      fromProcess?.ONESIGNAL_REST_API_KEY,
+    ONESIGNAL_APP_ID:
+      readStringBinding(fromArg, "ONESIGNAL_APP_ID") ||
+      readStringBinding(fromReq, "ONESIGNAL_APP_ID") ||
+      readStringBinding(fromNitro, "ONESIGNAL_APP_ID") ||
+      fromProcess?.ONESIGNAL_APP_ID,
   };
 }
 
@@ -93,13 +135,38 @@ function corsHeaders(origin: string | null): Record<string, string> {
 }
 
 function resolveRestKey(envBag: EnvBag): string {
-  const fromEnv = envBag.ONESIGNAL_REST_API_KEY?.trim();
-  return fromEnv || "";
+  return envBag.ONESIGNAL_REST_API_KEY?.trim() || "";
 }
 
 function resolveAppId(envBag: EnvBag): string {
-  const fromEnv = envBag.ONESIGNAL_APP_ID?.trim();
-  return fromEnv || ONESIGNAL_APP_ID;
+  return envBag.ONESIGNAL_APP_ID?.trim() || ONESIGNAL_APP_ID;
+}
+
+/** Safe diagnostics for /api/push/health — never returns secret values. */
+function pushConfigDiagnostics(envArg: unknown, envBag: EnvBag, request?: Request) {
+  const fromArg = readStringBinding(envArg, "ONESIGNAL_REST_API_KEY");
+  const fromReq = readStringBinding(requestEnv(request), "ONESIGNAL_REST_API_KEY");
+  const fromNitro = readStringBinding(nitroEnv(), "ONESIGNAL_REST_API_KEY");
+  const fromProcess = (globalThis as CloudflareGlobal).process?.env?.ONESIGNAL_REST_API_KEY;
+  const key = resolveRestKey(envBag);
+  let enumerableKeys: string[] = [];
+  try {
+    const src = (envArg && typeof envArg === "object" ? envArg : null) || requestEnv(request) || nitroEnv();
+    if (src && typeof src === "object") enumerableKeys = Object.keys(src as object);
+  } catch {
+    enumerableKeys = [];
+  }
+  return {
+    configured: Boolean(key),
+    keyLength: key.length,
+    sources: {
+      envArg: Boolean(fromArg?.trim()),
+      requestRuntime: Boolean(fromReq?.trim()),
+      nitroGlobal: Boolean(fromNitro?.trim()),
+      processEnv: Boolean(fromProcess?.trim()),
+    },
+    enumerableKeys,
+  };
 }
 
 function absoluteUrl(origin: string, url?: string): string | undefined {
@@ -310,9 +377,8 @@ async function handlePushNotify(request: Request, envBag: EnvBag): Promise<Respo
   }
 }
 
-function handlePushHealth(envBag: EnvBag): Response {
-  const restKey = resolveRestKey(envBag);
-  return jsonResponse({ ok: true, configured: Boolean(restKey) });
+function handlePushHealth(envArg: unknown, envBag: EnvBag, request?: Request): Response {
+  return jsonResponse({ ok: true, ...pushConfigDiagnostics(envArg, envBag, request) });
 }
 
 async function handleKeepAlive(): Promise<Response> {
@@ -351,14 +417,14 @@ export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
       const url = new URL(request.url);
-      const envBag = resolveEnv(env);
+      const envBag = resolveEnv(env, request);
 
       if (url.pathname === "/api/keepalive" || url.pathname === "/cdn-cgi/keepalive") {
         return handleKeepAlive();
       }
 
       if (url.pathname === "/api/push/health") {
-        return handlePushHealth(envBag);
+        return handlePushHealth(env, envBag, request);
       }
 
       if (url.pathname === "/api/push/notify") {
@@ -366,7 +432,7 @@ export default {
       }
 
       const handler = await getServerEntry();
-      const response = await handler.fetch(request, env ?? envBag, ctx);
+      const response = await handler.fetch(request, env ?? nitroEnv() ?? envBag, ctx);
       return await normalizeCatastrophicSsrResponse(response);
     } catch (error) {
       console.error(error);
