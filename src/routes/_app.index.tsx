@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { BannerCarousel } from "@/components/BannerCarousel";
+import { PostWall } from "@/components/PostWall";
 import { UnreadBadge, useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { useLiveReload } from "@/hooks/useLiveReload";
 
@@ -32,22 +33,15 @@ function Home() {
   const { profile, signOut, canToggleAdmin, viewMode, setViewMode, isAdmin, actingAsAdmin } = useAuth();
   const { counts, markRead } = useUnreadBadges();
   const navigate = useNavigate();
-  const [stats, setStats] = useState({ lessons: 0, quizzes: 0, activities: 0 });
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
   const loadHome = useCallback(async () => {
-    const [l, q, a, anns] = await Promise.all([
-      supabase.from("lessons").select("id", { count: "exact", head: true }),
-      supabase.from("quizzes").select("id", { count: "exact", head: true }).eq("published", true),
-      supabase.from("activities").select("id", { count: "exact", head: true }),
-      supabase.from("announcements").select("id, title, body, created_at").order("created_at", { ascending: false }).limit(5),
-    ]);
-    setStats({
-      lessons: l.count ?? 0,
-      quizzes: q.count ?? 0,
-      activities: a.error ? 0 : (a.count ?? 0),
-    });
-    if (!anns.error) setAnnouncements((anns.data ?? []) as Announcement[]);
+    const { data, error } = await supabase
+      .from("announcements")
+      .select("id, title, body, created_at")
+      .order("created_at", { ascending: false })
+      .limit(5);
+    if (!error) setAnnouncements((data ?? []) as Announcement[]);
   }, []);
 
   useEffect(() => {
@@ -77,8 +71,7 @@ function Home() {
     {
       to: "/chat",
       icon: MessageCircle,
-      label: "Classroom Chat",
-      desc: "Say hi to your class",
+      label: "Chat",
       color: "from-violet-500 to-fuchsia-500",
       badge: counts.chat,
     },
@@ -86,7 +79,6 @@ function Home() {
       to: "/activities",
       icon: FolderKanban,
       label: "Activities",
-      desc: `${stats.activities} assigned`,
       color: "from-sky-400 to-blue-600",
       badge: counts.activities,
     },
@@ -94,7 +86,6 @@ function Home() {
       to: "/lessons",
       icon: BookOpen,
       label: "Lessons",
-      desc: `${stats.lessons} available`,
       color: "from-amber-400 to-orange-500",
       badge: counts.lessons,
     },
@@ -102,15 +93,14 @@ function Home() {
       to: "/quizzes",
       icon: ClipboardList,
       label: "Quizzes",
-      desc: `${stats.quizzes} to take`,
       color: "from-emerald-400 to-teal-500",
       badge: counts.quizzes,
     },
-  ];
+  ] as const;
 
   return (
-    <div className="px-5 pt-6 max-w-md mx-auto pb-4">
-      <header className="flex items-center gap-3">
+    <div className="px-4 pt-6 max-w-md mx-auto pb-4">
+      <header className="flex items-center gap-3 px-1">
         <Link to="/profile" className="relative shrink-0">
           {profile?.avatar_url ? (
             <img
@@ -201,22 +191,26 @@ function Home() {
         )}
       </div>
 
-      <div className="mt-5 grid grid-cols-2 gap-3">
+      {/* Compact single-row action buttons */}
+      <div className="mt-4 grid grid-cols-4 gap-2">
         {tiles.map((t) => (
           <Link
             key={t.to}
             to={t.to}
-            className="group relative rounded-2xl p-4 bg-card shadow-card hover:shadow-glow hover:-translate-y-0.5 transition-all border border-border"
+            className="group relative flex flex-col items-center gap-1.5 rounded-2xl bg-card border border-border shadow-card px-1 py-2.5 active:scale-95 transition-all hover:shadow-glow"
           >
-            <UnreadBadge count={t.badge} className="top-2 right-2 -translate-y-0 translate-x-0" />
-            <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${t.color} grid place-items-center mb-3 group-hover:scale-110 transition-transform`}>
-              <t.icon className="h-5 w-5 text-white" />
+            <UnreadBadge count={t.badge} className="top-1 right-1 -translate-y-0 translate-x-0" />
+            <div
+              className={`h-9 w-9 rounded-xl bg-gradient-to-br ${t.color} grid place-items-center group-hover:scale-110 transition-transform shadow-soft`}
+            >
+              <t.icon className="h-4 w-4 text-white" />
             </div>
-            <div className="font-semibold text-sm">{t.label}</div>
-            <div className="text-[11px] text-muted-foreground mt-0.5">{t.desc}</div>
+            <span className="text-[10px] font-semibold text-center leading-tight text-foreground/90">{t.label}</span>
           </Link>
         ))}
       </div>
+
+      <PostWall />
     </div>
   );
 }

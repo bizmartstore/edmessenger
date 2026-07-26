@@ -8,6 +8,19 @@ export interface ClassMsg {
   content: string;
   attachments: UploadedFile[] | null;
   created_at: string;
+  reply_to_id?: string | null;
+  reply_to_content?: string | null;
+  reply_to_name?: string | null;
+  profiles?: { full_name: string | null; avatar_url: string | null } | null;
+}
+
+export interface GroupMsg {
+  id: string;
+  group_id: string;
+  user_id: string;
+  content: string;
+  attachments: UploadedFile[] | null;
+  created_at: string;
   profiles?: { full_name: string | null; avatar_url: string | null } | null;
 }
 
@@ -65,7 +78,36 @@ export function removeDmCache(peerId: string, id: string) {
   return next;
 }
 
+export function clearDmCache(peerId: string) {
+  dmCache.delete(peerId);
+}
+
 export function trimLatest<T>(list: T[]): T[] {
   if (list.length <= MSG_LIMIT) return list;
   return list.slice(list.length - MSG_LIMIT);
+}
+
+/** In-memory group message caches */
+const groupCache = new Map<string, GroupMsg[]>();
+
+export function getGroupCache(groupId: string): GroupMsg[] {
+  return groupCache.get(groupId) ?? [];
+}
+
+export function setGroupCache(groupId: string, msgs: GroupMsg[]) {
+  groupCache.set(groupId, msgs.slice(-MSG_LIMIT));
+}
+
+export function appendGroupCache(groupId: string, msg: GroupMsg) {
+  const prev = groupCache.get(groupId) ?? [];
+  if (prev.some((m) => m.id === msg.id)) return prev;
+  const next = [...prev, msg].slice(-MSG_LIMIT);
+  groupCache.set(groupId, next);
+  return next;
+}
+
+export function removeGroupCache(groupId: string, id: string) {
+  const next = (groupCache.get(groupId) ?? []).filter((m) => m.id !== id);
+  groupCache.set(groupId, next);
+  return next;
 }

@@ -114,7 +114,7 @@ function DMPage() {
         )}
         <div className="min-w-0">
           <div className="font-semibold text-sm truncate">{peer?.full_name ?? "Student"}</div>
-          <div className="text-[10px] text-muted-foreground">Private · latest {MSG_LIMIT}</div>
+          <div className="text-[10px] text-muted-foreground">Private message · latest {MSG_LIMIT}</div>
         </div>
       </header>
 

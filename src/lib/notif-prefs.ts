@@ -8,6 +8,8 @@ import { setupOneSignalForUser } from "@/lib/onesignal";
 export type NotifCategory =
   | "dm"
   | "classroom"
+  | "group"
+  | "wall"
   | "announcement"
   | "lesson"
   | "activity"
@@ -23,8 +25,10 @@ export interface NotifCategoryMeta {
 }
 
 export const NOTIF_CATEGORIES: NotifCategoryMeta[] = [
-  { key: "dm", label: "Private messages", description: "Someone sends you a direct message", audience: "both" },
+  { key: "dm", label: "Private messages", description: "Someone sends you a private message", audience: "both" },
   { key: "classroom", label: "Classroom chat", description: "New message in the classroom group chat", audience: "both" },
+  { key: "group", label: "Group chats", description: "New message in a student group you joined", audience: "both" },
+  { key: "wall", label: "Class wall", description: "Someone posts on the class wall", audience: "both" },
   { key: "announcement", label: "Announcements", description: "Admin posts a new announcement", audience: "student" },
   { key: "lesson", label: "New lessons", description: "Admin uploads a new lesson or module", audience: "student" },
   { key: "activity", label: "New activities", description: "Admin posts a new activity", audience: "student" },
@@ -38,6 +42,8 @@ export type NotifPrefs = Record<NotifCategory, boolean>;
 const DEFAULT_PREFS: NotifPrefs = {
   dm: true,
   classroom: true,
+  group: true,
+  wall: true,
   announcement: true,
   lesson: true,
   activity: true,

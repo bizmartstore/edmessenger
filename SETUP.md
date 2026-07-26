@@ -12,6 +12,7 @@ Supabase: `https://ijxoffbsedvcqbqeohju.supabase.co`
 6. Then run **`SUPABASE_MIGRATION_PUSH_ROLES.sql`** (push notification role lookup for OneSignal)
 7. Then run **`SUPABASE_MIGRATION_REVIEWERS.sql`** (lesson reviewers with explanations + practice attempts)
 8. Then run **`SUPABASE_MIGRATION_UNREAD_TOTAL.sql`** (reviewers in lessons badge + total for app-icon badge)
+9. Then run **`SUPABASE_MIGRATION_WALL_GROUPS.sql`** (class wall, student group chats + passwords, classroom replies, delete private conversations, daily upload quotas)
 
 Primary admin emails (auto-admin, Student/Admin toggle):
 - `sheethappenswithjaa@gmail.com`

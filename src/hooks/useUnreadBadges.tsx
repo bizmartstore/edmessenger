@@ -4,27 +4,39 @@ import { useAuth } from "@/hooks/useAuth";
 import { clearAppBadge, syncAppBadge, totalUnread } from "@/lib/app-badge";
 import { cn } from "@/lib/utils";
 
-export type UnreadSection = "classroom" | "dms" | "activities" | "lessons" | "quizzes" | "announcements";
+export type UnreadSection =
+  | "classroom"
+  | "dms"
+  | "groups"
+  | "activities"
+  | "lessons"
+  | "quizzes"
+  | "announcements"
+  | "wall";
 
 export interface UnreadCounts {
   classroom: number;
   dms: number;
+  groups: number;
   chat: number;
   activities: number;
   lessons: number;
   quizzes: number;
   announcements: number;
+  wall: number;
   total: number;
 }
 
 const EMPTY: UnreadCounts = {
   classroom: 0,
   dms: 0,
+  groups: 0,
   chat: 0,
   activities: 0,
   lessons: 0,
   quizzes: 0,
   announcements: 0,
+  wall: 0,
   total: 0,
 };
 
@@ -42,14 +54,27 @@ const REFRESH_DEBOUNCE_MS = 2500;
 function normalizeCounts(raw: Record<string, number>): UnreadCounts {
   const classroom = Number(raw.classroom ?? 0);
   const dms = Number(raw.dms ?? 0);
-  const chat = Number(raw.chat ?? classroom + dms);
+  const groups = Number(raw.groups ?? 0);
+  const chat = Number(raw.chat ?? classroom + dms + groups);
   const activities = Number(raw.activities ?? 0);
   const lessons = Number(raw.lessons ?? 0);
   const quizzes = Number(raw.quizzes ?? 0);
   const announcements = Number(raw.announcements ?? 0);
-  const computed = totalUnread({ chat, activities, lessons, quizzes, announcements });
+  const wall = Number(raw.wall ?? 0);
+  const computed = totalUnread({ chat, activities, lessons, quizzes, announcements }) + wall;
   const total = Number(raw.total ?? computed);
-  return { classroom, dms, chat, activities, lessons, quizzes, announcements, total: total || computed };
+  return {
+    classroom,
+    dms,
+    groups,
+    chat,
+    activities,
+    lessons,
+    quizzes,
+    announcements,
+    wall,
+    total: total || computed,
+  };
 }
 
 export function UnreadBadgesProvider({ children }: { children: ReactNode }) {
@@ -121,6 +146,8 @@ export function UnreadBadgesProvider({ children }: { children: ReactNode }) {
       .channel(`unread-${user.id}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, scheduleRefresh)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "direct_messages" }, scheduleRefresh)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "group_messages" }, scheduleRefresh)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "wall_posts" }, scheduleRefresh)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "activities" }, scheduleRefresh)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "lessons" }, scheduleRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "reviewers" }, scheduleRefresh)
