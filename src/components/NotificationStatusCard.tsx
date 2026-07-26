@@ -20,11 +20,13 @@ export function NotificationStatusCard({ userId }: Props) {
     }
     void refresh();
     const unsub = subscribePushChange(() => void refresh());
+    const unsubEvt = onPushStatusChanged(() => void refresh());
     const onVis = () => document.visibilityState === "visible" && void refresh();
     document.addEventListener("visibilitychange", onVis);
     return () => {
       cancelled = true;
       unsub();
+      unsubEvt();
       document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
