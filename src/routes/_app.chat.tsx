@@ -16,12 +16,14 @@ import {
   Reply,
   KeyRound,
   Loader2,
+  Circle,
 } from "lucide-react";
 import {
   appendClassroomCache,
   clearDmCache,
   getClassroomCache,
   MSG_LIMIT,
+  patchClassroomCache,
   removeClassroomCache,
   setClassroomCache,
   type ClassMsg,
@@ -29,6 +31,7 @@ import {
 import { getCachedProfile, rememberProfile, rememberProfiles } from "@/lib/profile-cache";
 import { UnreadBadge, useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { useLiveReload } from "@/hooks/useLiveReload";
+import { usePresence } from "@/hooks/usePresence";
 import { notifyAllExcept } from "@/lib/push";
 import { toast } from "sonner";
 
@@ -60,7 +63,7 @@ interface GroupPreview {
 async function loadClassroomMessages(): Promise<ClassMsg[]> {
   const { data, error } = await supabase
     .from("messages")
-    .select("id, user_id, content, attachments, created_at, reply_to_id, reply_to_content, reply_to_name")
+    .select("id, user_id, content, attachments, created_at, deleted_at, reply_to_id, reply_to_content, reply_to_name")
     .order("created_at", { ascending: false })
     .limit(MSG_LIMIT);
 
@@ -94,6 +97,7 @@ async function resolveClassProfile(userId: string): Promise<ClassMsg["profiles"]
 function ChatPage() {
   const { user, profile } = useAuth();
   const { counts, markRead } = useUnreadBadges();
+  const { online } = usePresence();
   const navigate = useNavigate();
   const [tab, setTab] = useState<"class" | "dms" | "groups">("class");
   const [messages, setMessages] = useState<ClassMsg[]>(() => getClassroomCache());
@@ -161,6 +165,10 @@ function ChatPage() {
         const p = await resolveClassProfile(row.user_id);
         const next = appendClassroomCache({ ...row, profiles: p });
         setMessages([...next]);
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, (payload) => {
+        const row = payload.new as ClassMsg;
+        setMessages([...patchClassroomCache(row.id, row)]);
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, (payload) => {
         const id = (payload.old as { id?: string })?.id;
@@ -235,7 +243,7 @@ function ChatPage() {
         reply_to_content: reply ? (reply.content || "Attachment").slice(0, 160) : null,
         reply_to_name: reply?.name ?? null,
       })
-      .select("id, user_id, content, attachments, created_at, reply_to_id, reply_to_content, reply_to_name")
+      .select("id, user_id, content, attachments, created_at, deleted_at, reply_to_id, reply_to_content, reply_to_name")
       .single();
     if (error) throw error;
     if (data) {
@@ -252,6 +260,23 @@ function ChatPage() {
       notifyAllExcept([user.id], profile?.full_name ?? "Classroom", preview, "/chat");
     }
     void supabase.rpc("prune_classroom_messages");
+  }
+
+  async function softDeleteClass(id: string) {
+    if (!confirm("Remove this message? Others will see that you removed it.")) return;
+    const { error } = await supabase.rpc("soft_delete_classroom_message", { p_id: id });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setMessages([
+      ...patchClassroomCache(id, {
+        deleted_at: new Date().toISOString(),
+        content: "",
+        attachments: null,
+        reply_to_content: null,
+      }),
+    ]);
   }
 
   async function createGroup() {
@@ -365,6 +390,7 @@ function ChatPage() {
             {messages.map((m) => {
               const mine = m.user_id === user?.id;
               const name = m.profiles?.full_name ?? "Student";
+              const removed = Boolean(m.deleted_at);
               return (
                 <div key={m.id} className={`flex gap-2 ${mine ? "justify-end" : "justify-start"} animate-fade-up group/msg`}>
                   {!mine &&
@@ -377,41 +403,69 @@ function ChatPage() {
                     ))}
                   <div className="relative max-w-[78%]">
                     <div
-                      className={`rounded-2xl px-3 py-2 ${mine ? "gradient-primary text-primary-foreground rounded-br-md" : "bg-card border border-border rounded-bl-md"}`}
+                      className={`rounded-2xl px-3 py-2 ${
+                        removed
+                          ? "bg-muted/60 border border-dashed border-border text-muted-foreground rounded-2xl"
+                          : mine
+                            ? "gradient-primary text-primary-foreground rounded-br-md"
+                            : "bg-card border border-border rounded-bl-md"
+                      }`}
                     >
-                      {!mine && <div className="text-[10px] font-semibold opacity-70 mb-0.5">{name}</div>}
-                      {(m.reply_to_id || m.reply_to_content) && (
-                        <div
-                          className={`mb-1.5 rounded-xl px-2 py-1.5 text-[11px] border-l-2 ${
-                            mine
-                              ? "bg-white/15 border-white/50 text-primary-foreground/90"
-                              : "bg-muted border-primary/50 text-muted-foreground"
-                          }`}
-                        >
-                          <div className="font-semibold text-[10px] opacity-90">↪ {m.reply_to_name ?? "Student"}</div>
-                          <div className="truncate">{m.reply_to_content || "Message"}</div>
+                      {!mine && !removed && <div className="text-[10px] font-semibold opacity-70 mb-0.5">{name}</div>}
+                      {removed ? (
+                        <div className="text-xs italic">
+                          This message was removed by {mine ? "you" : name}.
                         </div>
+                      ) : (
+                        <>
+                          {(m.reply_to_id || m.reply_to_content) && (
+                            <div
+                              className={`mb-1.5 rounded-xl px-2 py-1.5 text-[11px] border-l-2 ${
+                                mine
+                                  ? "bg-white/15 border-white/50 text-primary-foreground/90"
+                                  : "bg-muted border-primary/50 text-muted-foreground"
+                              }`}
+                            >
+                              <div className="font-semibold text-[10px] opacity-90">↪ {m.reply_to_name ?? "Student"}</div>
+                              <div className="truncate">{m.reply_to_content || "Message"}</div>
+                            </div>
+                          )}
+                          {m.content && <div className="text-sm whitespace-pre-wrap break-words">{m.content}</div>}
+                          <AttachmentList files={m.attachments} />
+                        </>
                       )}
-                      {m.content && <div className="text-sm whitespace-pre-wrap break-words">{m.content}</div>}
-                      <AttachmentList files={m.attachments} />
-                      <div className={`text-[9px] mt-1 ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                      <div className={`text-[9px] mt-1 ${mine && !removed ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
                         {formatDistanceToNow(new Date(m.created_at), { addSuffix: true })}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      title="Reply"
-                      onClick={() =>
-                        setReplyTo({
-                          id: m.id,
-                          content: m.content || (m.attachments?.length ? "Attachment" : ""),
-                          name,
-                        })
-                      }
-                      className={`mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-primary`}
-                    >
-                      <Reply className="h-3 w-3" /> Reply
-                    </button>
+                    {!removed && (
+                      <div className="mt-1 flex items-center gap-2">
+                        <button
+                          type="button"
+                          title="Reply"
+                          onClick={() =>
+                            setReplyTo({
+                              id: m.id,
+                              content: m.content || (m.attachments?.length ? "Attachment" : ""),
+                              name,
+                            })
+                          }
+                          className="inline-flex items-center gap-1 text-[10px] font-medium text-primary"
+                        >
+                          <Reply className="h-3 w-3" /> Reply
+                        </button>
+                        {mine && (
+                          <button
+                            type="button"
+                            title="Remove message"
+                            onClick={() => void softDeleteClass(m.id)}
+                            className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="h-3 w-3" /> Remove
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -432,6 +486,36 @@ function ChatPage() {
         </>
       ) : tab === "dms" ? (
         <div className="flex-1 overflow-y-auto space-y-3">
+          {online.length > 0 && (
+            <div className="rounded-2xl border border-border bg-card p-3 shadow-card">
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
+                <Circle className="h-2 w-2 fill-emerald-500 text-emerald-500" /> Online now · tap to message
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-1">
+                {online.map((u) => (
+                  <Link
+                    key={u.id}
+                    to="/dm/$peerId"
+                    params={{ peerId: u.id }}
+                    className="flex flex-col items-center gap-1 shrink-0 w-14"
+                  >
+                    <div className="relative">
+                      {u.avatar_url ? (
+                        <img src={u.avatar_url} alt="" className="h-11 w-11 rounded-full object-cover ring-2 ring-emerald-400/50" />
+                      ) : (
+                        <div className="h-11 w-11 rounded-full gradient-primary grid place-items-center text-primary-foreground text-sm font-bold ring-2 ring-emerald-400/50">
+                          {(u.full_name ?? "?")[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-500 border-2 border-card" />
+                    </div>
+                    <span className="text-[10px] font-medium truncate w-full text-center">{(u.full_name ?? "Student").split(" ")[0]}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
           <input
             value={peopleQuery}
             onChange={(e) => setPeopleQuery(e.target.value)}

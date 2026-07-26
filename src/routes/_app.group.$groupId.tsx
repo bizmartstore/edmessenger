@@ -1,6 +1,16 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Lock, LogOut, UsersRound } from "lucide-react";
+import {
+  ArrowLeft,
+  Lock,
+  LogOut,
+  UsersRound,
+  Pin,
+  BarChart3,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -12,6 +22,7 @@ import {
   appendGroupCache,
   getGroupCache,
   MSG_LIMIT,
+  patchGroupCache,
   removeGroupCache,
   setGroupCache,
   type GroupMsg,
@@ -20,6 +31,7 @@ import { getCachedProfile, rememberProfile, rememberProfiles } from "@/lib/profi
 import { useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { notifyUsers } from "@/lib/push";
 import { fetchUploadQuota, type QuotaStatus } from "@/lib/upload-quota";
+import { GROUP_ICEBREAKERS, GROUP_REACTIONS } from "@/lib/social";
 
 export const Route = createFileRoute("/_app/group/$groupId")({
   component: GroupChatPage,
@@ -32,6 +44,15 @@ interface GroupInfo {
   has_password: boolean;
   member_count: number;
   is_member: boolean;
+  pinned_message_id?: string | null;
+}
+
+interface PollResults {
+  poll_id: string;
+  question: string;
+  options: string[];
+  my_vote: number | null;
+  counts: number[];
 }
 
 async function resolveProfile(userId: string) {
@@ -53,6 +74,14 @@ function GroupChatPage() {
   const [quota, setQuota] = useState<QuotaStatus | null>(null);
   const [joinPass, setJoinPass] = useState("");
   const [joining, setJoining] = useState(false);
+  const [reactions, setReactions] = useState<Record<string, Record<string, number>>>({});
+  const [polls, setPolls] = useState<Record<string, PollResults>>({});
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [pollOpen, setPollOpen] = useState(false);
+  const [pollQ, setPollQ] = useState("");
+  const [pollOpts, setPollOpts] = useState(["", ""]);
+  const [pinnedPreview, setPinnedPreview] = useState<GroupMsg | null>(null);
+  const [reactFor, setReactFor] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -64,19 +93,55 @@ function GroupChatPage() {
     if (error) return;
     const list = (data ?? []) as GroupInfo[];
     const g = list.find((x) => x.id === groupId) ?? null;
+    // pinned_message_id may live on chat_groups — fetch lightly
+    if (g) {
+      const { data: row } = await supabase
+        .from("chat_groups")
+        .select("pinned_message_id")
+        .eq("id", groupId)
+        .maybeSingle();
+      g.pinned_message_id = (row as { pinned_message_id?: string | null } | null)?.pinned_message_id ?? null;
+    }
     setInfo(g);
     return g;
   }, [groupId]);
+
+  const loadReactions = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    const { data } = await supabase.rpc("get_group_msg_reactions", { p_ids: ids });
+    if (data) setReactions(data as Record<string, Record<string, number>>);
+  }, []);
+
+  const loadPoll = useCallback(async (pollId: string) => {
+    const { data } = await supabase.rpc("get_group_poll_results", { p_poll: pollId });
+    if (data) {
+      setPolls((p) => ({ ...p, [pollId]: data as PollResults }));
+    }
+  }, []);
 
   const loadMessages = useCallback(async () => {
     if (!user) return;
     const { data, error } = await supabase
       .from("group_messages")
-      .select("id, group_id, user_id, content, attachments, created_at")
+      .select("id, group_id, user_id, content, attachments, created_at, deleted_at, msg_type, meta")
       .eq("group_id", groupId)
       .order("created_at", { ascending: false })
       .limit(MSG_LIMIT);
     if (error) {
+      // columns may not exist yet
+      const fb = await supabase
+        .from("group_messages")
+        .select("id, group_id, user_id, content, attachments, created_at")
+        .eq("group_id", groupId)
+        .order("created_at", { ascending: false })
+        .limit(MSG_LIMIT);
+      if (fb.error) {
+        setLoading(false);
+        return;
+      }
+      const rows = ((fb.data ?? []) as GroupMsg[]).reverse();
+      setGroupCache(groupId, rows);
+      setMsgs(rows);
       setLoading(false);
       return;
     }
@@ -94,12 +159,17 @@ function GroupChatPage() {
       }));
       setGroupCache(groupId, withP);
       setMsgs(withP);
+      void loadReactions(withP.map((m) => m.id));
+      for (const m of withP) {
+        const pollId = (m.meta as { poll_id?: string } | null)?.poll_id;
+        if (m.msg_type === "poll" && pollId) void loadPoll(pollId);
+      }
     } else {
       setGroupCache(groupId, []);
       setMsgs([]);
     }
     setLoading(false);
-  }, [groupId, user]);
+  }, [groupId, user, loadReactions, loadPoll]);
 
   useEffect(() => {
     void (async () => {
@@ -114,6 +184,24 @@ function GroupChatPage() {
   }, [loadInfo, loadMessages]);
 
   useEffect(() => {
+    if (!info?.pinned_message_id) {
+      setPinnedPreview(null);
+      return;
+    }
+    const local = msgs.find((m) => m.id === info.pinned_message_id);
+    if (local) {
+      setPinnedPreview(local);
+      return;
+    }
+    void supabase
+      .from("group_messages")
+      .select("id, group_id, user_id, content, attachments, created_at, deleted_at, msg_type, meta")
+      .eq("id", info.pinned_message_id)
+      .maybeSingle()
+      .then(({ data }) => setPinnedPreview((data as GroupMsg) ?? null));
+  }, [info?.pinned_message_id, msgs]);
+
+  useEffect(() => {
     if (!user || !info?.is_member) return;
     const ch = supabase
       .channel(`group-${groupId}`)
@@ -124,6 +212,16 @@ function GroupChatPage() {
           const row = payload.new as GroupMsg;
           const p = await resolveProfile(row.user_id);
           setMsgs([...appendGroupCache(groupId, { ...row, profiles: p })]);
+          const pollId = (row.meta as { poll_id?: string } | null)?.poll_id;
+          if (row.msg_type === "poll" && pollId) void loadPoll(pollId);
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "group_messages", filter: `group_id=eq.${groupId}` },
+        (payload) => {
+          const row = payload.new as GroupMsg;
+          setMsgs([...patchGroupCache(groupId, row.id, row)]);
         },
       )
       .on(
@@ -134,11 +232,21 @@ function GroupChatPage() {
           if (id) setMsgs([...removeGroupCache(groupId, id)]);
         },
       )
+      .on("postgres_changes", { event: "*", schema: "public", table: "group_poll_votes" }, () => {
+        const cached = getGroupCache(groupId);
+        for (const m of cached) {
+          const pollId = (m.meta as { poll_id?: string } | null)?.poll_id;
+          if (m.msg_type === "poll" && pollId) void loadPoll(pollId);
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "group_msg_reactions" }, () => {
+        void loadReactions(getGroupCache(groupId).map((m) => m.id));
+      })
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
     };
-  }, [groupId, user, info?.is_member]);
+  }, [groupId, user, info?.is_member, loadPoll, loadReactions]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -187,8 +295,9 @@ function GroupChatPage() {
         user_id: user.id,
         content: text,
         attachments: attachments.length ? attachments : null,
+        msg_type: "text",
       })
-      .select("id, group_id, user_id, content, attachments, created_at")
+      .select("id, group_id, user_id, content, attachments, created_at, deleted_at, msg_type, meta")
       .single();
     if (error) throw error;
     if (data) {
@@ -211,6 +320,81 @@ function GroupChatPage() {
       void fetchUploadQuota("group").then(setQuota);
     }
     void supabase.rpc("prune_group_messages", { p_group: groupId });
+  }
+
+  async function softDelete(id: string) {
+    if (!confirm("Remove this message? Members will see that you removed it.")) return;
+    const { error } = await supabase.rpc("soft_delete_group_message", { p_id: id });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setMsgs([
+      ...patchGroupCache(groupId, id, {
+        deleted_at: new Date().toISOString(),
+        content: "",
+        attachments: null,
+        meta: null,
+      }),
+    ]);
+  }
+
+  async function react(msgId: string, emoji: string) {
+    const { error } = await supabase.rpc("toggle_group_msg_reaction", { p_msg: msgId, p_emoji: emoji });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setReactFor(null);
+    void loadReactions(msgs.map((m) => m.id));
+  }
+
+  async function pin(msgId: string | null) {
+    const { error } = await supabase.rpc("pin_group_message", { p_group: groupId, p_message: msgId });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setInfo((i) => (i ? { ...i, pinned_message_id: msgId } : i));
+    toast.success(msgId ? "Pinned" : "Unpinned");
+  }
+
+  async function sendIcebreaker() {
+    const line = GROUP_ICEBREAKERS[Math.floor(Math.random() * GROUP_ICEBREAKERS.length)];
+    await send(`🧊 Icebreaker: ${line}`, []);
+    setToolsOpen(false);
+  }
+
+  async function createPoll() {
+    const opts = pollOpts.map((o) => o.trim()).filter(Boolean);
+    if (pollQ.trim().length < 2 || opts.length < 2) {
+      toast.error("Need a question and at least 2 options");
+      return;
+    }
+    const { error } = await supabase.rpc("create_group_poll", {
+      p_group: groupId,
+      p_question: pollQ.trim(),
+      p_options: opts,
+    });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setPollOpen(false);
+    setPollQ("");
+    setPollOpts(["", ""]);
+    setToolsOpen(false);
+    toast.success("Poll posted!");
+    void loadMessages();
+  }
+
+  async function vote(pollId: string, idx: number) {
+    const { error } = await supabase.rpc("vote_group_poll", { p_poll: pollId, p_option: idx });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    void loadPoll(pollId);
   }
 
   if (!info && !loading) {
@@ -283,23 +467,103 @@ function GroupChatPage() {
             {info?.has_password && <Lock className="h-3 w-3 text-amber-500" />}
           </div>
           <div className="text-[10px] text-muted-foreground">
-            {info?.member_count ?? "…"} members · latest {MSG_LIMIT}
-            {quota ? ` · ${quota.images_used}/${quota.images_limit} img today` : ""}
+            {info?.member_count ?? "…"} members · text tools only
+            {quota ? ` · ${quota.images_used}/${quota.images_limit} img` : ""}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={() => setToolsOpen((o) => !o)}
+          className="p-2 rounded-xl hover:bg-muted text-primary"
+          title="Group tools"
+        >
+          <Sparkles className="h-4 w-4" />
+        </button>
         <button type="button" onClick={() => void leave()} className="p-2 rounded-xl hover:bg-muted text-muted-foreground" title="Leave group">
           <LogOut className="h-4 w-4" />
         </button>
       </header>
 
+      {toolsOpen && (
+        <div className="mt-2 rounded-2xl border border-border bg-card p-3 shadow-card space-y-2 animate-pop">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Fun tools · no extra quota</div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => void sendIcebreaker()}
+              className="py-2.5 rounded-xl bg-muted text-xs font-semibold hover:bg-secondary"
+            >
+              🧊 Icebreaker
+            </button>
+            <button
+              type="button"
+              onClick={() => setPollOpen((o) => !o)}
+              className="py-2.5 rounded-xl bg-muted text-xs font-semibold hover:bg-secondary inline-flex items-center justify-center gap-1"
+            >
+              <BarChart3 className="h-3.5 w-3.5" /> Quick poll
+            </button>
+          </div>
+          {pollOpen && (
+            <div className="space-y-2 pt-1 border-t border-border">
+              <input
+                value={pollQ}
+                onChange={(e) => setPollQ(e.target.value)}
+                placeholder="Poll question"
+                maxLength={200}
+                className="w-full px-3 py-2 rounded-xl bg-muted border border-border text-xs outline-none focus:border-primary"
+              />
+              {pollOpts.map((o, i) => (
+                <input
+                  key={i}
+                  value={o}
+                  onChange={(e) => setPollOpts((arr) => arr.map((x, idx) => (idx === i ? e.target.value : x)))}
+                  placeholder={`Option ${i + 1}`}
+                  maxLength={80}
+                  className="w-full px-3 py-2 rounded-xl bg-muted border border-border text-xs outline-none focus:border-primary"
+                />
+              ))}
+              {pollOpts.length < 4 && (
+                <button type="button" onClick={() => setPollOpts((o) => [...o, ""])} className="text-[11px] text-primary font-medium">
+                  + Add option
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void createPoll()}
+                className="w-full py-2 rounded-xl gradient-primary text-primary-foreground text-xs font-semibold"
+              >
+                Post poll
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {pinnedPreview && !pinnedPreview.deleted_at && (
+        <div className="mt-2 rounded-2xl border border-amber-400/40 bg-amber-50/80 dark:bg-amber-950/20 px-3 py-2 flex items-start gap-2">
+          <Pin className="h-3.5 w-3.5 text-amber-600 mt-0.5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-semibold text-amber-700">Pinned</div>
+            <div className="text-xs truncate">{pinnedPreview.content || "Attachment / poll"}</div>
+          </div>
+          <button type="button" onClick={() => void pin(null)} className="text-muted-foreground hover:text-foreground">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto space-y-3 pr-1 py-3">
         {loading && msgs.length === 0 && <div className="text-center text-xs text-muted-foreground py-10">Loading…</div>}
         {!loading && msgs.length === 0 && (
-          <div className="text-center text-xs text-muted-foreground py-10">No messages yet. Start the conversation!</div>
+          <div className="text-center text-xs text-muted-foreground py-10">No messages yet. Try an icebreaker!</div>
         )}
         {msgs.map((m) => {
           const mine = m.user_id === user?.id;
           const name = m.profiles?.full_name ?? "Student";
+          const removed = Boolean(m.deleted_at);
+          const pollId = (m.meta as { poll_id?: string } | null)?.poll_id;
+          const poll = pollId ? polls[pollId] : null;
+          const rx = reactions[m.id] ?? {};
           return (
             <div key={m.id} className={`flex gap-2 ${mine ? "justify-end" : "justify-start"} animate-fade-up`}>
               {!mine &&
@@ -310,15 +574,106 @@ function GroupChatPage() {
                     {name[0]?.toUpperCase()}
                   </div>
                 ))}
-              <div
-                className={`max-w-[78%] rounded-2xl px-3 py-2 ${mine ? "gradient-primary text-primary-foreground rounded-br-md" : "bg-card border border-border rounded-bl-md"}`}
-              >
-                {!mine && <div className="text-[10px] font-semibold opacity-70 mb-0.5">{name}</div>}
-                {m.content && <div className="text-sm whitespace-pre-wrap break-words">{m.content}</div>}
-                <AttachmentList files={m.attachments} />
-                <div className={`text-[9px] mt-1 ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                  {formatDistanceToNow(new Date(m.created_at), { addSuffix: true })}
+              <div className="max-w-[82%] relative">
+                <div
+                  className={`rounded-2xl px-3 py-2 ${
+                    removed
+                      ? "bg-muted/60 border border-dashed border-border text-muted-foreground"
+                      : mine
+                        ? "gradient-primary text-primary-foreground rounded-br-md"
+                        : "bg-card border border-border rounded-bl-md"
+                  }`}
+                >
+                  {!mine && !removed && <div className="text-[10px] font-semibold opacity-70 mb-0.5">{name}</div>}
+                  {removed ? (
+                    <div className="text-xs italic">This message was removed by {mine ? "you" : name}.</div>
+                  ) : m.msg_type === "poll" && poll ? (
+                    <div className="space-y-2 min-w-[12rem]">
+                      <div className="text-sm font-semibold flex items-center gap-1">
+                        <BarChart3 className="h-3.5 w-3.5" /> {poll.question}
+                      </div>
+                      {poll.options.map((opt, idx) => {
+                        const total = poll.counts.reduce((a, b) => a + Number(b || 0), 0) || 1;
+                        const cnt = Number(poll.counts[idx] ?? 0);
+                        const pct = Math.round((cnt / total) * 100);
+                        const selected = poll.my_vote === idx;
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => void vote(poll.poll_id, idx)}
+                            className={`relative w-full text-left rounded-xl overflow-hidden border text-xs px-2.5 py-2 ${
+                              mine
+                                ? selected
+                                  ? "border-white/60 bg-white/20"
+                                  : "border-white/25 bg-white/10"
+                                : selected
+                                  ? "border-primary bg-primary/10"
+                                  : "border-border bg-muted/50"
+                            }`}
+                          >
+                            <div
+                              className={`absolute inset-y-0 left-0 ${mine ? "bg-white/25" : "bg-primary/15"}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                            <div className="relative flex justify-between gap-2">
+                              <span className="font-medium">{opt}</span>
+                              <span className="opacity-70">{pct}%</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <>
+                      {m.content && <div className="text-sm whitespace-pre-wrap break-words">{m.content}</div>}
+                      <AttachmentList files={m.attachments} />
+                    </>
+                  )}
+                  <div className={`text-[9px] mt-1 ${mine && !removed ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                    {formatDistanceToNow(new Date(m.created_at), { addSuffix: true })}
+                  </div>
                 </div>
+
+                {!removed && Object.keys(rx).length > 0 && (
+                  <div className={`flex flex-wrap gap-1 mt-1 ${mine ? "justify-end" : "justify-start"}`}>
+                    {Object.entries(rx).map(([e, n]) => (
+                      <button
+                        key={e}
+                        type="button"
+                        onClick={() => void react(m.id, e)}
+                        className="text-[11px] rounded-full bg-card border border-border px-1.5 py-0.5 shadow-soft"
+                      >
+                        {e} {n}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {!removed && (
+                  <div className={`mt-1 flex items-center gap-2 relative ${mine ? "justify-end" : "justify-start"}`}>
+                    <button type="button" onClick={() => setReactFor((c) => (c === m.id ? null : m.id))} className="text-[10px] text-primary font-medium">
+                      React
+                    </button>
+                    <button type="button" onClick={() => void pin(m.id)} className="text-[10px] text-muted-foreground font-medium inline-flex items-center gap-0.5">
+                      <Pin className="h-3 w-3" /> Pin
+                    </button>
+                    {mine && (
+                      <button type="button" onClick={() => void softDelete(m.id)} className="text-[10px] text-muted-foreground hover:text-destructive font-medium inline-flex items-center gap-0.5">
+                        <Trash2 className="h-3 w-3" /> Remove
+                      </button>
+                    )}
+                    {reactFor === m.id && (
+                      <div className={`absolute bottom-full mb-1 z-20 flex gap-1 rounded-2xl border border-border bg-card p-1.5 shadow-glow animate-pop ${mine ? "right-0" : "left-0"}`}>
+                        {GROUP_REACTIONS.map((e) => (
+                          <button key={e} type="button" onClick={() => void react(m.id, e)} className="h-8 w-8 rounded-xl text-base hover:bg-muted grid place-items-center">
+                            {e}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -327,12 +682,7 @@ function GroupChatPage() {
       </div>
       <div className="pt-2 sticky bottom-0">
         {user && info?.is_member && (
-          <MessageComposer
-            userId={user.id}
-            onSend={send}
-            placeholder={`Message ${info.name}…`}
-            quotaScope="group"
-          />
+          <MessageComposer userId={user.id} onSend={send} placeholder={`Message ${info.name}…`} quotaScope="group" />
         )}
       </div>
     </div>

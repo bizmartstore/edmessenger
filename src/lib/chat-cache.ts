@@ -8,6 +8,7 @@ export interface ClassMsg {
   content: string;
   attachments: UploadedFile[] | null;
   created_at: string;
+  deleted_at?: string | null;
   reply_to_id?: string | null;
   reply_to_content?: string | null;
   reply_to_name?: string | null;
@@ -21,6 +22,9 @@ export interface GroupMsg {
   content: string;
   attachments: UploadedFile[] | null;
   created_at: string;
+  deleted_at?: string | null;
+  msg_type?: string | null;
+  meta?: Record<string, unknown> | null;
   profiles?: { full_name: string | null; avatar_url: string | null } | null;
 }
 
@@ -53,6 +57,11 @@ export function appendClassroomCache(msg: ClassMsg) {
 
 export function removeClassroomCache(id: string) {
   classroomCache = classroomCache.filter((m) => m.id !== id);
+  return classroomCache;
+}
+
+export function patchClassroomCache(id: string, patch: Partial<ClassMsg>) {
+  classroomCache = classroomCache.map((m) => (m.id === id ? { ...m, ...patch } : m));
   return classroomCache;
 }
 
@@ -108,6 +117,12 @@ export function appendGroupCache(groupId: string, msg: GroupMsg) {
 
 export function removeGroupCache(groupId: string, id: string) {
   const next = (groupCache.get(groupId) ?? []).filter((m) => m.id !== id);
+  groupCache.set(groupId, next);
+  return next;
+}
+
+export function patchGroupCache(groupId: string, id: string, patch: Partial<GroupMsg>) {
+  const next = (groupCache.get(groupId) ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m));
   groupCache.set(groupId, next);
   return next;
 }
