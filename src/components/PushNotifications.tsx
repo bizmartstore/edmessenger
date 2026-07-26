@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { emitPushStatusChanged, logoutOneSignal, setupOneSignalForUser } from "@/lib/onesignal";
-import { syncAllTags } from "@/lib/notif-prefs";
 
 export function PushNotifications() {
   const { user, isAdmin, loading } = useAuth();
@@ -26,8 +25,9 @@ export function PushNotifications() {
     lastUserId.current = user.id;
     void setupOneSignalForUser(user.id, role)
       .then(() => {
-        // Tags after login only — avoids 409 while External ID transfers.
-        syncAllTags(user.id, role);
+        // Do not sync OneSignal tags on every session — login() identity
+        // transfer routinely returns 409 and queued tag ops fail loudly.
+        // Tags are written only when the user changes prefs (setNotifPref).
         if (changed) emitPushStatusChanged();
       })
       .catch(() => {});

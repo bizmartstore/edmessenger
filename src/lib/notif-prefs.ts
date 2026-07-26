@@ -90,16 +90,20 @@ export function syncAllTags(userId: string, role: "admin" | "student" = "student
   const prefs = getNotifPrefs(userId);
   void (async () => {
     try {
-      // Must wait for login() to finish — tagging during identity transfer
-      // causes 409 Conflict and "Op failed (no retry)" in the console.
       const OneSignal = await setupOneSignalForUser(userId, role);
+      // Wait for External ID to settle after login() transfer (409 is expected mid-transfer).
+      for (let i = 0; i < 20; i++) {
+        if (OneSignal.User.externalId === userId) break;
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      if (OneSignal.User.externalId !== userId) return;
       const tags: Record<string, string> = {};
       for (const cat of NOTIF_CATEGORIES) {
         tags[`notif_${cat.key}`] = prefs[cat.key] ? "on" : "off";
       }
       OneSignal.User.addTags?.(tags);
     } catch {
-      // ignore
+      // ignore — tags are optional; push delivery uses external_id, not tags
     }
   })();
 }
