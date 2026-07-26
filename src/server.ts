@@ -354,9 +354,11 @@ async function handlePushNotify(request: Request, envBag: EnvBag): Promise<Respo
   const appId = resolveAppId(envBag);
   const originUrl = new URL(request.url).origin;
   const abs = absoluteUrl(originUrl, payload.url);
-  // Use the EdMessenger logo instead of OneSignal's default bell icon.
-  // Per-notification override — does not change audience targeting or delivery.
+  // Color logo = main notification icon (right / large).
+  // Monochrome white-on-transparent badge = Android small/status icon (left).
+  // Full-color images on chrome_web_badge render as a solid white square on Android.
   const iconUrl = `${originUrl}/logo-pwa.png`;
+  const badgeUrl = `${originUrl}/icons/notif-badge.png`;
   const base: Record<string, unknown> = {
     app_id: appId,
     target_channel: "push",
@@ -366,7 +368,7 @@ async function handlePushNotify(request: Request, envBag: EnvBag): Promise<Respo
     ios_badgeType: "Increase",
     ios_badgeCount: 1,
     chrome_web_icon: iconUrl,
-    chrome_web_badge: iconUrl,
+    chrome_web_badge: badgeUrl,
     firefox_icon: iconUrl,
     large_icon: iconUrl,
     huawei_large_icon: iconUrl,

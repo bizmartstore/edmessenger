@@ -3,3 +3,6 @@ export const ONESIGNAL_APP_ID = "718bec75-70f7-4936-bdff-5dd26e8c835d";
 
 /** App logo used as the web-push notification icon (replaces OneSignal's default bell). */
 export const PUSH_NOTIFICATION_ICON_PATH = "/logo-pwa.png";
+
+/** Android small/status badge — white silhouette on transparent (required by Android). */
+export const PUSH_NOTIFICATION_BADGE_PATH = "/icons/notif-badge.png";
