@@ -128,6 +128,11 @@ function initOneSignalSdk(): Promise<OneSignalSDK> {
   return initPromise;
 }
 
+/** Public init for callers that only need the SDK (e.g. tag sync). */
+export function initOneSignal(): Promise<OneSignalSDK> {
+  return initOneSignalSdk();
+}
+
 /** Init SDK and identify the user in one step to avoid orphan anonymous subscriptions. */
 export async function setupOneSignalForUser(
   userId: string,
