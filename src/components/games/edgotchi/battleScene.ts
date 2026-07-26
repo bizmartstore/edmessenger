@@ -16,6 +16,8 @@ export type BattleBootData = {
   mapTint: number;
   playerName: string;
   enemyName: string;
+  /** Unique wild foe look; falls back to tinted player / default. */
+  enemyVoxels?: Voxel[];
 };
 
 const VOXEL_W = 8;
@@ -47,6 +49,7 @@ function defaultEnemyVoxels(): Voxel[] {
 export class EdgotchiBattleScene extends Phaser.Scene {
   private mapTint = 0x1e3a5f;
   private voxels: Voxel[] = [];
+  private enemyVoxels: Voxel[] = [];
   private playerName = "Edgotchi";
   private enemyName = "Foe";
   private playerSprite!: Phaser.GameObjects.Container;
@@ -59,6 +62,7 @@ export class EdgotchiBattleScene extends Phaser.Scene {
 
   init(data: BattleBootData) {
     this.voxels = data?.voxels ?? [];
+    this.enemyVoxels = data?.enemyVoxels?.length ? data.enemyVoxels : [];
     this.mapTint = data?.mapTint ?? 0x1e3a5f;
     this.playerName = data?.playerName ?? "Edgotchi";
     this.enemyName = data?.enemyName ?? "Foe";
@@ -93,7 +97,12 @@ export class EdgotchiBattleScene extends Phaser.Scene {
     this.playerSprite.setPosition(w * 0.28, h * 0.55);
     this.playerSprite.setScale(1.15);
 
-    this.enemySprite = this.buildVoxelPet(this.voxels.length ? this.voxels : defaultEnemyVoxels(), true);
+    const foeVox = this.enemyVoxels.length
+      ? this.enemyVoxels
+      : this.voxels.length
+        ? this.voxels
+        : defaultEnemyVoxels();
+    this.enemySprite = this.buildVoxelPet(foeVox, !this.enemyVoxels.length);
     this.enemySprite.setPosition(w * 0.72, h * 0.48);
     this.enemySprite.setScale(1.05);
 

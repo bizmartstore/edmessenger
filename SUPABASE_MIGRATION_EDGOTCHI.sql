@@ -16,12 +16,17 @@ create table if not exists public.edgotchis (
   battles int not null default 0,
   skills text[] not null default array['spark']::text[],
   map_id text not null default 'campus',
+  gotchi_tokens int not null default 0 check (gotchi_tokens >= 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (length(trim(name)) >= 2 and length(name) <= 24),
   check (jsonb_typeof(voxels) = 'array'),
   check (hp >= 0 and max_hp > 0 and mana >= 0 and max_mana > 0)
 );
+
+-- Existing installs: add token column without rewriting history
+alter table public.edgotchis
+  add column if not exists gotchi_tokens int not null default 0 check (gotchi_tokens >= 0);
 
 create index if not exists edgotchis_level_idx on public.edgotchis (level desc);
 
@@ -48,3 +53,4 @@ create policy "edgotchi update own" on public.edgotchis
 
 -- Optional: students can peek at peers' public battle stats (name/level/voxels only) for sparring
 -- Kept own-only for quota + privacy; NPC foes are used in battles instead.
+-- Open-world wild Gotchis are generated client-side (no extra DB/AI quota).

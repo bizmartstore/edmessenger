@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Heart, Sparkles, Swords, Map as MapIcon, Zap } from "lucide-react";
+import { ArrowLeft, Coins, Heart, Sparkles, Swords, Map as MapIcon, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import {
   MAPS,
   SKILLS,
+  getMap,
   type EdgotchiRow,
   type QuizQ,
   type SkillId,
   type Voxel,
+  type WildGotchi,
   createEdgotchi,
   enemyForMap,
   loadBattleQuestions,
@@ -20,9 +22,13 @@ import {
 import { VoxelPainter, VoxelPreview } from "./VoxelPainter";
 import { cn } from "@/lib/utils";
 
-type BattleGame = {
-  destroy: (removeCanvas?: boolean) => void;
-  events: { emit: (event: string, ...args: unknown[]) => boolean };
+type PhaserBridge = {
+  destroy: (removeCanvas?: boolean, noReturn?: boolean) => void;
+  events: {
+    emit: (event: string, ...args: unknown[]) => boolean;
+    on: (event: string, fn: (...args: unknown[]) => void) => unknown;
+    off: (event: string, fn: (...args: unknown[]) => void) => unknown;
+  };
 };
 
 type BattleVfx =
@@ -33,11 +39,21 @@ type BattleVfx =
   | { type: "win" }
   | { type: "lose" };
 
-function emitVfx(game: BattleGame | null, evt: BattleVfx) {
+function emitVfx(game: PhaserBridge | null, evt: BattleVfx) {
   game?.events.emit("edgotchi-vfx", evt);
 }
 
 type Screen = "loading" | "create" | "hub" | "explore" | "battle";
+
+type BattleFoe = {
+  name: string;
+  maxHp: number;
+  hp: number;
+  power: number;
+  voxels?: Voxel[];
+  tokenReward: number;
+  wildId?: string;
+};
 
 export function EdgotchiApp({ onBack }: { onBack: () => void }) {
   const { user } = useAuth();
@@ -47,6 +63,8 @@ export function EdgotchiApp({ onBack }: { onBack: () => void }) {
   const [voxels, setVoxels] = useState<Voxel[]>([]);
   const [creating, setCreating] = useState(false);
   const [mapId, setMapId] = useState("campus");
+  const [foe, setFoe] = useState<BattleFoe | null>(null);
+  const [defeatedIds, setDefeatedIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -131,9 +149,24 @@ export function EdgotchiApp({ onBack }: { onBack: () => void }) {
       <ExploreScreen
         pet={pet}
         mapId={mapId}
-        onMap={(id) => setMapId(id)}
+        defeatedIds={defeatedIds}
+        onMap={(id) => {
+          setMapId(id);
+          setDefeatedIds([]);
+        }}
         onBack={() => setScreen("hub")}
-        onBattle={() => setScreen("battle")}
+        onEncounter={(wild) => {
+          setFoe({
+            name: wild.name,
+            maxHp: wild.maxHp,
+            hp: wild.hp,
+            power: wild.power,
+            voxels: wild.voxels,
+            tokenReward: wild.tokenReward,
+            wildId: wild.id,
+          });
+          setScreen("battle");
+        }}
         onSaveMap={async (id) => {
           const next = await saveEdgotchiProgress({ ...pet, map_id: id });
           setPet(next);
@@ -143,15 +176,37 @@ export function EdgotchiApp({ onBack }: { onBack: () => void }) {
   }
 
   if (screen === "battle") {
+    const battleFoe: BattleFoe =
+      foe ??
+      (() => {
+        const e = enemyForMap(mapId, pet.level);
+        return {
+          name: e.name,
+          maxHp: e.maxHp,
+          hp: e.hp,
+          power: e.power,
+          voxels: e.voxels,
+          tokenReward: e.tokenReward,
+        };
+      })();
     return (
       <BattleScreen
         pet={pet}
         mapId={mapId}
-        onDone={(next) => {
+        foe={battleFoe}
+        onDone={(next, won) => {
           setPet(next);
-          setScreen("hub");
+          if (won && battleFoe.wildId) {
+            const id = battleFoe.wildId;
+            setDefeatedIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
+          }
+          setFoe(null);
+          setScreen(battleFoe.wildId ? "explore" : "hub");
         }}
-        onBack={() => setScreen("hub")}
+        onBack={() => {
+          setFoe(null);
+          setScreen(foe?.wildId ? "explore" : "hub");
+        }}
       />
     );
   }
@@ -161,7 +216,18 @@ export function EdgotchiApp({ onBack }: { onBack: () => void }) {
       pet={pet}
       onBack={onBack}
       onExplore={() => setScreen("explore")}
-      onBattle={() => setScreen("battle")}
+      onBattle={() => {
+        const e = enemyForMap(mapId, pet.level);
+        setFoe({
+          name: e.name,
+          maxHp: e.maxHp,
+          hp: e.hp,
+          power: e.power,
+          voxels: e.voxels,
+          tokenReward: e.tokenReward,
+        });
+        setScreen("battle");
+      }}
     />
   );
 }
@@ -220,6 +286,7 @@ function HubScreen({
   onBattle: () => void;
 }) {
   const unlocked = skillsForLevel(pet.level);
+  const map = getMap(pet.map_id);
   return (
     <div className="space-y-4">
       <Header title={pet.name} onBack={onBack} />
@@ -231,10 +298,17 @@ function HubScreen({
             <div className="text-[10px] text-muted-foreground">
               XP {pet.xp}/{xpToNext(pet.level)} · Wins {pet.wins}/{pet.battles}
             </div>
+            <div className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600">
+              <Coins className="h-3 w-3" /> {pet.gotchi_tokens ?? 0} Gotchi Tokens
+            </div>
             <StatBar label="HP" value={pet.hp} max={pet.max_hp} color="bg-rose-500" icon={<Heart className="h-3 w-3" />} />
             <StatBar label="Mana" value={pet.mana} max={pet.max_mana} color="bg-sky-500" icon={<Zap className="h-3 w-3" />} />
           </div>
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-muted/40 px-3 py-2 text-[10px] text-muted-foreground">
+        Last map: <span className="font-semibold text-foreground">{map.name}</span> · open-world explore with wild Gotchis
       </div>
 
       <div>
@@ -272,11 +346,11 @@ function HubScreen({
           onClick={onBattle}
           className="rounded-2xl py-3 text-sm font-semibold gradient-primary text-primary-foreground shadow-glow inline-flex items-center justify-center gap-2"
         >
-          <Swords className="h-4 w-4" /> Battle
+          <Swords className="h-4 w-4" /> Quick Battle
         </button>
       </div>
       <p className="text-[10px] text-center text-muted-foreground">
-        Battles are turn-based quiz fights. Answer correctly to cast skills with Phaser FX.
+        Walk the open map, battle wild Gotchis, earn Gotchi Tokens. All world art is procedural — no extra AI quota.
       </p>
     </div>
   );
@@ -285,49 +359,118 @@ function HubScreen({
 function ExploreScreen({
   pet,
   mapId,
+  defeatedIds,
   onMap,
   onBack,
-  onBattle,
+  onEncounter,
   onSaveMap,
 }: {
   pet: EdgotchiRow;
   mapId: string;
+  defeatedIds: string[];
   onMap: (id: string) => void;
   onBack: () => void;
-  onBattle: () => void;
+  onEncounter: (wild: WildGotchi) => void;
   onSaveMap: (id: string) => Promise<void>;
 }) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const gameRef = useRef<PhaserBridge | null>(null);
+  const map = getMap(mapId);
+  const [picking, setPicking] = useState(false);
+
+  useEffect(() => {
+    const el = hostRef.current;
+    if (!el || typeof window === "undefined" || picking) return;
+    let cancelled = false;
+    let game: PhaserBridge | null = null;
+
+    const onEnc = (...args: unknown[]) => {
+      const evt = args[0] as { wild?: WildGotchi } | undefined;
+      if (evt?.wild) onEncounter(evt.wild);
+    };
+
+    void import("./exploreScene").then(({ createEdgotchiExploreGame }) => {
+      if (cancelled || !hostRef.current) return;
+      const created = createEdgotchiExploreGame(hostRef.current, {
+        mapId,
+        voxels: pet.voxels,
+        playerName: pet.name,
+        playerLevel: pet.level,
+        defeatedIds,
+      }) as unknown as PhaserBridge;
+      game = created;
+      gameRef.current = created;
+      created.events.on("edgotchi-encounter", onEnc);
+    });
+
+    return () => {
+      cancelled = true;
+      game?.events.off("edgotchi-encounter", onEnc);
+      game?.destroy(true);
+      gameRef.current = null;
+    };
+    // Remount when map changes; defeatedIds applied via resume when returning from battle
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapId, picking]);
+
+  // After battle return: tell scene which wild was defeated without full remount if same map
+  useEffect(() => {
+    const g = gameRef.current;
+    if (!g || defeatedIds.length === 0) return;
+    const last = defeatedIds[defeatedIds.length - 1];
+    g.events.emit("edgotchi-explore-resume", { defeatedId: last });
+  }, [defeatedIds]);
+
   return (
-    <div className="space-y-4">
-      <Header title="Explore maps" onBack={onBack} />
-      <div className="grid gap-2">
-        {MAPS.map((m) => (
-          <button
-            key={m.id}
-            type="button"
-            onClick={() => {
-              onMap(m.id);
-              void onSaveMap(m.id).catch(() => undefined);
-            }}
-            className={cn(
-              "rounded-2xl border p-3 text-left transition-all",
-              mapId === m.id ? "border-primary bg-primary/10 shadow-glow" : "border-border bg-card",
-            )}
-          >
-            <div className="font-semibold text-sm">{m.name}</div>
-            <div className="text-[10px] text-muted-foreground mt-0.5">
-              Challenge level ~{pet.level} · Wild foes await
-            </div>
-          </button>
-        ))}
+    <div className="space-y-3">
+      <Header title={picking ? "Choose map" : map.name} onBack={picking ? () => setPicking(false) : onBack} />
+      <div className="flex items-center justify-between gap-2 text-[10px]">
+        <span className="inline-flex items-center gap-1 font-bold text-amber-600">
+          <Coins className="h-3 w-3" /> {pet.gotchi_tokens ?? 0} tokens
+        </span>
+        <button
+          type="button"
+          onClick={() => setPicking((p) => !p)}
+          className="rounded-lg border border-border bg-muted px-2 py-1 font-semibold hover:border-primary"
+        >
+          {picking ? "Back to world" : "Switch map"}
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={onBattle}
-        className="w-full rounded-2xl py-3 font-semibold gradient-primary text-primary-foreground shadow-glow inline-flex items-center justify-center gap-2"
-      >
-        <Swords className="h-4 w-4" /> Fight on this map
-      </button>
+
+      {picking ? (
+        <div className="grid gap-2">
+          {MAPS.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => {
+                onMap(m.id);
+                void onSaveMap(m.id).catch(() => undefined);
+                setPicking(false);
+              }}
+              className={cn(
+                "rounded-2xl border p-3 text-left transition-all",
+                mapId === m.id ? "border-primary bg-primary/10 shadow-glow" : "border-border bg-card",
+              )}
+            >
+              <div className="font-semibold text-sm">{m.name}</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">
+                ~{m.wildCount} wild Gotchis · day/night · {m.worldW}×{m.worldH}
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div
+            ref={hostRef}
+            className="overflow-hidden rounded-2xl border border-border bg-slate-950 min-h-[320px]"
+          />
+          <p className="text-[10px] text-center text-muted-foreground">
+            Move with WASD, arrows, or tap. Touch a wild Gotchi to start a quiz battle and earn tokens.
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -335,28 +478,30 @@ function ExploreScreen({
 function BattleScreen({
   pet,
   mapId,
+  foe,
   onDone,
   onBack,
 }: {
   pet: EdgotchiRow;
   mapId: string;
-  onDone: (pet: EdgotchiRow) => void;
+  foe: BattleFoe;
+  onDone: (pet: EdgotchiRow, won: boolean) => void;
   onBack: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const gameRef = useRef<BattleGame | null>(null);
+  const gameRef = useRef<PhaserBridge | null>(null);
   const [questions, setQuestions] = useState<QuizQ[]>([]);
   const [qIndex, setQIndex] = useState(0);
   const [phase, setPhase] = useState<"quiz" | "skill" | "enemy" | "end">("quiz");
   const [playerHp, setPlayerHp] = useState(pet.hp);
   const [playerMana, setPlayerMana] = useState(pet.mana);
-  const [enemy, setEnemy] = useState(() => enemyForMap(mapId, pet.level));
-  const enemyHpRef = useRef(enemy.hp);
+  const [enemy, setEnemy] = useState(foe);
+  const enemyHpRef = useRef(foe.hp);
   const [shield, setShield] = useState(false);
   const shieldRef = useRef(false);
   const [message, setMessage] = useState("Answer correctly to attack!");
   const [busy, setBusy] = useState(false);
-  const map = MAPS.find((m) => m.id === mapId) ?? MAPS[0];
+  const map = getMap(mapId);
 
   useEffect(() => {
     enemyHpRef.current = enemy.hp;
@@ -380,17 +525,18 @@ function BattleScreen({
     const el = hostRef.current;
     if (!el || typeof window === "undefined") return;
     let cancelled = false;
-    let game: BattleGame | null = null;
-    // Dynamic import keeps Phaser out of the Nitro/SSR Cloudflare Worker graph.
+    let game: PhaserBridge | null = null;
     void import("./battleScene").then(({ createEdgotchiBattleGame }) => {
       if (cancelled || !hostRef.current) return;
-      game = createEdgotchiBattleGame(hostRef.current, {
+      const created = createEdgotchiBattleGame(hostRef.current, {
         voxels: pet.voxels,
         mapTint: map.tint,
         playerName: pet.name,
-        enemyName: enemy.name,
-      });
-      gameRef.current = game;
+        enemyName: foe.name,
+        enemyVoxels: foe.voxels,
+      }) as unknown as PhaserBridge;
+      game = created;
+      gameRef.current = created;
     });
     return () => {
       cancelled = true;
@@ -406,6 +552,7 @@ function BattleScreen({
     setPhase("end");
     emitVfx(gameRef.current, { type: won ? "win" : "lose" });
     const xpGain = won ? 28 + pet.level * 4 : 8;
+    const tokensGain = won ? foe.tokenReward : 0;
     let next: EdgotchiRow = {
       ...pet,
       hp: won ? Math.min(pet.max_hp, playerHp + 10) : Math.max(1, Math.floor(pet.max_hp * 0.4)),
@@ -414,15 +561,20 @@ function BattleScreen({
       wins: pet.wins + (won ? 1 : 0),
       battles: pet.battles + 1,
       map_id: mapId,
+      gotchi_tokens: (pet.gotchi_tokens ?? 0) + tokensGain,
       skills: skillsForLevel(pet.level),
     };
     try {
       next = await saveEdgotchiProgress(next);
-      toast.success(won ? `Victory! +${xpGain} XP` : `Defeated… +${xpGain} XP`);
+      toast.success(
+        won
+          ? `Victory! +${xpGain} XP · +${tokensGain} Gotchi Tokens`
+          : `Defeated… +${xpGain} XP`,
+      );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save progress");
     }
-    window.setTimeout(() => onDone(next), 1200);
+    window.setTimeout(() => onDone(next, won), 1200);
   }
 
   function afterPlayerAction(enemyHpNow: number) {
@@ -510,8 +662,14 @@ function BattleScreen({
 
   return (
     <div className="space-y-3">
-      <Header title={`Battle · ${map.name}`} onBack={onBack} />
+      <Header title={`Battle · ${enemy.name}`} onBack={onBack} />
       <div ref={hostRef} className="overflow-hidden rounded-2xl border border-border bg-slate-950" />
+      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+        <span>{map.name}</span>
+        <span className="inline-flex items-center gap-1 font-semibold text-amber-600">
+          <Coins className="h-3 w-3" /> Win +{foe.tokenReward} tokens
+        </span>
+      </div>
       <div className="grid grid-cols-2 gap-2 text-[10px]">
         <StatBar label={pet.name} value={playerHp} max={pet.max_hp} color="bg-rose-500" icon={<Heart className="h-3 w-3" />} />
         <StatBar label={enemy.name} value={enemy.hp} max={enemy.maxHp} color="bg-amber-500" icon={<Swords className="h-3 w-3" />} />

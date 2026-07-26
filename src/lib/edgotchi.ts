@@ -17,8 +17,41 @@ export type EdgotchiRow = {
   battles: number;
   skills: string[];
   map_id: string;
+  /** Soft currency earned by defeating wild Gotchis. */
+  gotchi_tokens: number;
   created_at?: string;
   updated_at?: string;
+};
+
+/** Snapshot of a wild Gotchi spawned in the open world (client-only, no DB). */
+export type WildGotchi = {
+  id: string;
+  name: string;
+  voxels: Voxel[];
+  level: number;
+  maxHp: number;
+  hp: number;
+  power: number;
+  tokenReward: number;
+};
+
+export type MapTheme = {
+  id: string;
+  name: string;
+  tint: number;
+  groundA: number;
+  groundB: number;
+  path: number;
+  accent: number;
+  treeColor: number;
+  leafColor: number;
+  skyDay: number;
+  skyNight: number;
+  worldW: number;
+  worldH: number;
+  wildCount: number;
+  treeCount: number;
+  grassCount: number;
 };
 
 export const VOXEL_COLS = 8;
@@ -97,12 +130,171 @@ export const SKILLS: Record<SkillId, SkillDef> = {
   },
 };
 
-export const MAPS = [
-  { id: "campus", name: "Campus Courtyard", tint: 0x1e3a5f },
-  { id: "library", name: "Silent Library", tint: 0x2d1b4e },
-  { id: "lab", name: "Science Lab", tint: 0x0f3d3e },
-  { id: "arena", name: "Quiz Arena", tint: 0x4a1c2f },
+export const MAPS: readonly MapTheme[] = [
+  {
+    id: "campus",
+    name: "Campus Courtyard",
+    tint: 0x1e3a5f,
+    groundA: 0x3d7a45,
+    groundB: 0x2f6238,
+    path: 0xc4b08a,
+    accent: 0x6bbf6f,
+    treeColor: 0x5c3a1e,
+    leafColor: 0x2f8f3a,
+    skyDay: 0x87b8e8,
+    skyNight: 0x0b1530,
+    worldW: 3600,
+    worldH: 2800,
+    wildCount: 220,
+    treeCount: 90,
+    grassCount: 280,
+  },
+  {
+    id: "library",
+    name: "Silent Library",
+    tint: 0x2d1b4e,
+    groundA: 0x3a2a55,
+    groundB: 0x2a1c42,
+    path: 0x6b5a48,
+    accent: 0x8b6bbf,
+    treeColor: 0x4a3428,
+    leafColor: 0x5a3d7a,
+    skyDay: 0x6a5a8a,
+    skyNight: 0x10081f,
+    worldW: 3400,
+    worldH: 2600,
+    wildCount: 200,
+    treeCount: 70,
+    grassCount: 160,
+  },
+  {
+    id: "lab",
+    name: "Science Lab",
+    tint: 0x0f3d3e,
+    groundA: 0x1a5550,
+    groundB: 0x134040,
+    path: 0x5a7a78,
+    accent: 0x3ecfc0,
+    treeColor: 0x2a4a48,
+    leafColor: 0x2aa88a,
+    skyDay: 0x5aa8b0,
+    skyNight: 0x061820,
+    worldW: 3500,
+    worldH: 2700,
+    wildCount: 210,
+    treeCount: 55,
+    grassCount: 200,
+  },
+  {
+    id: "arena",
+    name: "Quiz Arena",
+    tint: 0x4a1c2f,
+    groundA: 0x8a5a3a,
+    groundB: 0x6e452c,
+    path: 0xb89a6a,
+    accent: 0xe07050,
+    treeColor: 0x5a3020,
+    leafColor: 0x8a6030,
+    skyDay: 0xe0a060,
+    skyNight: 0x1a0810,
+    worldW: 3800,
+    worldH: 3000,
+    wildCount: 240,
+    treeCount: 40,
+    grassCount: 220,
+  },
 ] as const;
+
+export function getMap(mapId: string): MapTheme {
+  return MAPS.find((m) => m.id === mapId) ?? MAPS[0];
+}
+
+/** Tiny seeded RNG — deterministic wild layouts per map, no network. */
+export function mulberry32(seed: number) {
+  let t = seed >>> 0;
+  return () => {
+    t += 0x6d2b79f5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const WILD_PREFIX = ["Zap", "Nova", "Byte", "Quiz", "Pixel", "Spark", "Echo", "Flux", "Luma", "Hex"];
+const WILD_SUFFIX = ["ling", "bit", "chi", "orb", "kit", "pup", "fox", "owl", "ray", "bug"];
+
+/** Procedural voxel pet — hundreds of unique looks, zero asset quota. */
+export function generateWildVoxels(seed: number): Voxel[] {
+  const rnd = mulberry32(seed);
+  const cells: Voxel[] = [];
+  const bodyC = Math.floor(rnd() * 8);
+  const accentC = Math.floor(rnd() * 8);
+  const eyeC = 6;
+  const width = 3 + Math.floor(rnd() * 3);
+  const height = 4 + Math.floor(rnd() * 4);
+  const ox = Math.floor((VOXEL_COLS - width) / 2);
+  const oy = Math.floor((VOXEL_ROWS - height) / 2) + 1;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (rnd() < 0.18) continue;
+      cells.push({ x: ox + x, y: oy + y, c: rnd() < 0.2 ? accentC : bodyC });
+    }
+  }
+  // Eyes
+  if (width >= 3) {
+    cells.push({ x: ox + 1, y: oy + 1, c: eyeC });
+    cells.push({ x: ox + width - 2, y: oy + 1, c: eyeC });
+  }
+  // Legs / antennae
+  if (rnd() > 0.35) {
+    cells.push({ x: ox, y: oy + height, c: bodyC });
+    cells.push({ x: ox + width - 1, y: oy + height, c: bodyC });
+  }
+  if (rnd() > 0.5) {
+    cells.push({ x: ox + Math.floor(width / 2), y: oy - 1, c: accentC });
+  }
+  // Deduplicate by cell
+  const seen = new Set<string>();
+  const out: Voxel[] = [];
+  for (const v of cells) {
+    if (v.x < 0 || v.x >= VOXEL_COLS || v.y < 0 || v.y >= VOXEL_ROWS) continue;
+    const k = `${v.x},${v.y}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(v);
+    if (out.length >= MAX_VOXELS) break;
+  }
+  return out.length >= 4 ? out : [{ x: 3, y: 4, c: bodyC }, { x: 4, y: 4, c: bodyC }, { x: 3, y: 5, c: accentC }, { x: 4, y: 5, c: accentC }];
+}
+
+export function wildGotchiName(seed: number): string {
+  const rnd = mulberry32(seed ^ 0x9e3779b9);
+  const a = WILD_PREFIX[Math.floor(rnd() * WILD_PREFIX.length)];
+  const b = WILD_SUFFIX[Math.floor(rnd() * WILD_SUFFIX.length)];
+  return `${a}${b}`;
+}
+
+export function tokenRewardForLevel(level: number): number {
+  return 4 + Math.floor(level * 1.5) + Math.floor(Math.random() * 4);
+}
+
+export function spawnWildGotchi(mapId: string, index: number, playerLevel: number): WildGotchi {
+  const seed = (mapId.split("").reduce((a, c) => a + c.charCodeAt(0), 0) * 9973 + index * 7919) >>> 0;
+  const rnd = mulberry32(seed);
+  const level = Math.max(1, playerLevel + Math.floor(rnd() * 5) - 1);
+  const maxHp = 55 + level * 9 + Math.floor(rnd() * 20);
+  return {
+    id: `${mapId}-w${index}`,
+    name: wildGotchiName(seed),
+    voxels: generateWildVoxels(seed),
+    level,
+    maxHp,
+    hp: maxHp,
+    power: 8 + level * 2 + Math.floor(rnd() * 4),
+    tokenReward: tokenRewardForLevel(level),
+  };
+}
 
 export function xpToNext(level: number) {
   return 40 + level * 25;
@@ -160,6 +352,7 @@ function rowFromDb(data: Record<string, unknown>): EdgotchiRow {
     battles: Number(data.battles) || 0,
     skills: Array.isArray(data.skills) ? (data.skills as string[]) : ["spark"],
     map_id: String(data.map_id || "campus"),
+    gotchi_tokens: Math.max(0, Math.floor(Number(data.gotchi_tokens) || 0)),
     created_at: data.created_at ? String(data.created_at) : undefined,
     updated_at: data.updated_at ? String(data.updated_at) : undefined,
   };
@@ -223,12 +416,39 @@ export async function saveEdgotchiProgress(pet: EdgotchiRow): Promise<EdgotchiRo
       battles: next.battles,
       skills: next.skills,
       map_id: next.map_id,
+      gotchi_tokens: Math.max(0, Math.floor(next.gotchi_tokens || 0)),
       updated_at: next.updated_at,
     })
     .eq("user_id", next.user_id)
     .select("*")
     .single();
-  if (error) throw error;
+  if (error) {
+    // Graceful if migration not applied yet — retry without tokens column.
+    if (String(error.message || "").toLowerCase().includes("gotchi_tokens")) {
+      const { data: d2, error: e2 } = await supabase
+        .from("edgotchis")
+        .update({
+          level: next.level,
+          xp: next.xp,
+          hp: Math.min(next.hp, next.max_hp),
+          max_hp: next.max_hp,
+          mana: Math.min(next.mana, next.max_mana),
+          max_mana: next.max_mana,
+          wins: next.wins,
+          battles: next.battles,
+          skills: next.skills,
+          map_id: next.map_id,
+          updated_at: next.updated_at,
+        })
+        .eq("user_id", next.user_id)
+        .select("*")
+        .single();
+      if (e2) throw e2;
+      const row = rowFromDb(d2 as Record<string, unknown>);
+      return { ...row, gotchi_tokens: next.gotchi_tokens || 0 };
+    }
+    throw error;
+  }
   return rowFromDb(data as Record<string, unknown>);
 }
 
@@ -344,5 +564,7 @@ export function enemyForMap(mapId: string, playerLevel: number) {
     maxHp: base,
     hp: base,
     power: 10 + playerLevel * 2,
+    voxels: generateWildVoxels((mapId.length * 1337 + playerLevel * 99) >>> 0),
+    tokenReward: tokenRewardForLevel(playerLevel),
   };
 }
