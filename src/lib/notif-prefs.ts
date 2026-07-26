@@ -3,7 +3,7 @@
  * Stored in localStorage per userId. Also mirrored as OneSignal user tags
  * (notif_<key> = "on" | "off") so server-side filtering can be layered on later.
  */
-import { initOneSignal } from "@/lib/onesignal";
+import { setupOneSignalForUser } from "@/lib/onesignal";
 
 export type NotifCategory =
   | "dm"
@@ -69,14 +69,11 @@ export function setNotifPref(userId: string, key: NotifCategory, value: boolean)
   } catch {
     // ignore
   }
-  // Mirror into OneSignal tags (best-effort, non-blocking).
+  // Mirror into OneSignal tags only after login settles (best-effort).
   void (async () => {
     try {
-      const OneSignal = await initOneSignal();
-      const user = (OneSignal as unknown as {
-        User?: { addTag?: (k: string, v: string) => void | Promise<void> };
-      }).User;
-      user?.addTag?.(`notif_${key}`, value ? "on" : "off");
+      const OneSignal = await setupOneSignalForUser(userId, "student");
+      OneSignal.User.addTag?.(`notif_${key}`, value ? "on" : "off");
     } catch {
       // ignore
     }
@@ -89,19 +86,18 @@ export function isCategoryMuted(userId: string | null | undefined, key: NotifCat
   return getNotifPrefs(userId)[key] === false;
 }
 
-export function syncAllTags(userId: string): void {
+export function syncAllTags(userId: string, role: "admin" | "student" = "student"): void {
   const prefs = getNotifPrefs(userId);
   void (async () => {
     try {
-      const OneSignal = await initOneSignal();
-      const user = (OneSignal as unknown as {
-        User?: { addTags?: (tags: Record<string, string>) => void | Promise<void> };
-      }).User;
+      // Must wait for login() to finish — tagging during identity transfer
+      // causes 409 Conflict and "Op failed (no retry)" in the console.
+      const OneSignal = await setupOneSignalForUser(userId, role);
       const tags: Record<string, string> = {};
       for (const cat of NOTIF_CATEGORIES) {
         tags[`notif_${cat.key}`] = prefs[cat.key] ? "on" : "off";
       }
-      user?.addTags?.(tags);
+      OneSignal.User.addTags?.(tags);
     } catch {
       // ignore
     }

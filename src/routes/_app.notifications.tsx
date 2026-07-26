@@ -151,7 +151,7 @@ function NotificationsPage() {
         </div>
         <button
           type="button"
-          onClick={() => user && (syncAllTags(user.id), toast.success("Preferences synced"))}
+          onClick={() => user && (syncAllTags(user.id, role), toast.success("Preferences synced"))}
           className="mt-3 text-xs text-muted-foreground underline"
         >
           Re-sync preferences to my device

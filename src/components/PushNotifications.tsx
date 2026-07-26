@@ -21,11 +21,13 @@ export function PushNotifications() {
     }
 
     const changed = lastUserId.current !== user.id;
+    const role = isAdmin ? "admin" : "student";
     wasSignedIn.current = true;
     lastUserId.current = user.id;
-    void setupOneSignalForUser(user.id, isAdmin ? "admin" : "student")
+    void setupOneSignalForUser(user.id, role)
       .then(() => {
-        syncAllTags(user.id);
+        // Tags after login only — avoids 409 while External ID transfers.
+        syncAllTags(user.id, role);
         if (changed) emitPushStatusChanged();
       })
       .catch(() => {});

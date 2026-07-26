@@ -6,17 +6,25 @@ type PushSubscriptionAPI = {
   token?: string | null;
   optIn?: () => Promise<void>;
   optOut?: () => Promise<void>;
-  addEventListener: (event: string, listener: () => void) => void;
-  removeEventListener: (event: string, listener: () => void) => void;
+  addEventListener: (event: string, listener: (...args: unknown[]) => void) => void;
+  removeEventListener: (event: string, listener: (...args: unknown[]) => void) => void;
+};
+
+type OneSignalUser = {
+  onesignalId?: string | null;
+  externalId?: string | null;
+  PushSubscription: PushSubscriptionAPI;
+  addTag?: (key: string, value: string) => void;
+  addTags?: (tags: Record<string, string>) => void;
+  addEventListener?: (event: "change", listener: (...args: unknown[]) => void) => void;
+  removeEventListener?: (event: "change", listener: (...args: unknown[]) => void) => void;
 };
 
 type OneSignalSDK = {
   init: (opts: Record<string, unknown>) => Promise<void>;
   login: (externalId: string) => Promise<void>;
   logout: () => Promise<void>;
-  User: {
-    PushSubscription: PushSubscriptionAPI;
-  };
+  User: OneSignalUser;
   Notifications: {
     permission: boolean | "default" | "granted" | "denied";
     permissionNative?: NotificationPermission;
@@ -34,8 +42,10 @@ declare global {
 }
 
 let initPromise: Promise<OneSignalSDK> | null = null;
+let identifyPromise: Promise<void> | null = null;
 let identifiedUserId: string | null = null;
 let lastSyncAt: number | null = null;
+let cleanedLegacyWorkers = false;
 
 const PUSH_EVENT = "edm:push-status-changed";
 
@@ -70,30 +80,26 @@ function withSdk(fn: (OneSignal: OneSignalSDK) => void | Promise<void>): void {
   window.OneSignalDeferred.push(fn);
 }
 
-/** Remove stale workers from old /push/ scope or duplicate OneSignal registrations. */
-async function removeStaleServiceWorkers(): Promise<void> {
-  if (!("serviceWorker" in navigator)) return;
+/**
+ * Only remove the old /push/ scope worker from earlier setups.
+ * Do NOT unregister the live OneSignal root worker — that causes
+ * "No active registration" and duplicate Never Subscribed rows.
+ */
+async function removeLegacyPushWorkers(): Promise<void> {
+  if (cleanedLegacyWorkers || !("serviceWorker" in navigator)) return;
+  cleanedLegacyWorkers = true;
   try {
     const registrations = await navigator.serviceWorker.getRegistrations();
     await Promise.all(
       registrations.map(async (registration) => {
         const scopePath = new URL(registration.scope).pathname;
-        const scriptUrl =
-          registration.active?.scriptURL ??
-          registration.installing?.scriptURL ??
-          registration.waiting?.scriptURL ??
-          "";
-
-        const isLegacyPushScope = scopePath === "/push/" || scopePath.endsWith("/push/");
-        const isOneSignalWorker = scriptUrl.includes("OneSignalSDKWorker.js");
-        const isRootScope = scopePath === "/" || scopePath.endsWith("/");
-
-        if (isLegacyPushScope) return registration.unregister();
-        if (isRootScope && scriptUrl && !isOneSignalWorker) return registration.unregister();
+        if (scopePath === "/push/" || scopePath.endsWith("/push/")) {
+          return registration.unregister();
+        }
       }),
     );
   } catch {
-    // Browser may block cleanup; a stale registration is harmless if init succeeds.
+    // ignore
   }
 }
 
@@ -107,7 +113,7 @@ function initOneSignalSdk(): Promise<OneSignalSDK> {
   initPromise = new Promise((resolve, reject) => {
     withSdk(async (OneSignal) => {
       try {
-        await removeStaleServiceWorkers();
+        await removeLegacyPushWorkers();
         await OneSignal.init({
           appId: ONESIGNAL_APP_ID,
           allowLocalhostAsSecureOrigin: true,
@@ -128,7 +134,7 @@ function initOneSignalSdk(): Promise<OneSignalSDK> {
   return initPromise;
 }
 
-/** Public init for callers that only need the SDK (e.g. tag sync). */
+/** Public init for callers that only need the SDK (prefer setupOneSignalForUser). */
 export function initOneSignal(): Promise<OneSignalSDK> {
   return initOneSignalSdk();
 }
@@ -143,29 +149,56 @@ export async function setupOneSignalForUser(
   return OneSignal;
 }
 
+/**
+ * Serialize login so concurrent profile/status/tag callers cannot start a second
+ * identity transfer (which creates Never Subscribed + Subscribed duplicates).
+ */
 export async function identifyOneSignalUser(userId: string): Promise<void> {
-  const OneSignal = await initOneSignalSdk();
-
   if (identifiedUserId === userId) return;
 
-  if (identifiedUserId && identifiedUserId !== userId) {
-    await OneSignal.logout();
-    identifiedUserId = null;
+  if (identifyPromise) {
+    await identifyPromise;
+    if (identifiedUserId === userId) return;
   }
 
-  await OneSignal.login(userId);
-  identifiedUserId = userId;
-  lastSyncAt = Date.now();
-  emitPushStatusChanged();
+  identifyPromise = (async () => {
+    const OneSignal = await initOneSignalSdk();
+
+    // Already bound in IndexedDB from a prior session — still call login to
+    // sync, but skip logout churn when switching isn't needed.
+    if (identifiedUserId && identifiedUserId !== userId) {
+      await OneSignal.logout();
+      identifiedUserId = null;
+    }
+
+    await OneSignal.login(userId);
+    // login() resolves after transfer; 409 in the network tab is expected when
+    // the External ID already exists — the SDK switches to that user.
+    identifiedUserId = userId;
+    lastSyncAt = Date.now();
+    emitPushStatusChanged();
+  })();
+
+  try {
+    await identifyPromise;
+  } finally {
+    if (identifiedUserId === userId) {
+      identifyPromise = null;
+    } else {
+      identifyPromise = null;
+    }
+  }
 }
 
 /**
  * Clears OneSignal + push-subscription state so a stale/404 subscription can
- * be rebuilt from scratch on the next opt-in. Safe to call when signed out.
+ * be rebuilt from scratch on the next opt-in. Reload the page after calling.
  */
 export async function resetPushRegistration(): Promise<void> {
   identifiedUserId = null;
   initPromise = null;
+  identifyPromise = null;
+  cleanedLegacyWorkers = false;
   try {
     if (typeof indexedDB !== "undefined") {
       const dbs = ["ONE_SIGNAL_SDK_DB"];
@@ -187,7 +220,10 @@ export async function resetPushRegistration(): Promise<void> {
       const regs = await navigator.serviceWorker.getRegistrations();
       await Promise.all(
         regs
-          .filter((r) => /OneSignalSDKWorker/.test(r.active?.scriptURL ?? "") || /OneSignalSDKWorker/.test(r.installing?.scriptURL ?? ""))
+          .filter((r) => {
+            const url = r.active?.scriptURL ?? r.installing?.scriptURL ?? r.waiting?.scriptURL ?? "";
+            return /OneSignalSDKWorker/.test(url);
+          })
           .map((r) => r.unregister()),
       );
     }
@@ -206,7 +242,10 @@ export async function getWorkerInfo(): Promise<{
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return null;
   try {
     const regs = await navigator.serviceWorker.getRegistrations();
-    const reg = regs.find((r) => /OneSignalSDKWorker/.test(r.active?.scriptURL ?? r.installing?.scriptURL ?? ""));
+    const reg = regs.find((r) => {
+      const url = r.active?.scriptURL ?? r.installing?.scriptURL ?? r.waiting?.scriptURL ?? "";
+      return /OneSignalSDKWorker/.test(url);
+    });
     if (!reg) return null;
     const sw = reg.active ?? reg.installing ?? reg.waiting;
     return {
@@ -298,20 +337,35 @@ export async function getPushStatus(userId: string, role: "admin" | "student" = 
   };
 }
 
+/**
+ * Opt in using only PushSubscription.optIn().
+ * Calling requestPermission() + optIn() together creates a second empty
+ * "Never Subscribed" row beside the real Subscribed subscription.
+ */
 export async function requestPushPermission(userId: string, role: "admin" | "student" = "student"): Promise<boolean> {
   await setupOneSignalForUser(userId, role);
   const OneSignal = await initOneSignalSdk();
   if (OneSignal.User.PushSubscription.optedIn) return true;
 
-  const granted = await OneSignal.Notifications.requestPermission();
-  if (granted && typeof OneSignal.User.PushSubscription.optIn === "function") {
+  // Wait for the SW to be ready before prompting — avoids
+  // "No active registration available on the ServiceWorkerRegistration".
+  if ("serviceWorker" in navigator) {
+    try {
+      await navigator.serviceWorker.ready;
+    } catch {
+      // ignore
+    }
+  }
+
+  if (typeof OneSignal.User.PushSubscription.optIn === "function") {
     try {
       await OneSignal.User.PushSubscription.optIn();
     } catch {
       // ignore
     }
   }
-  return Boolean(granted || OneSignal.User.PushSubscription.optedIn);
+
+  return Boolean(OneSignal.User.PushSubscription.optedIn);
 }
 
 export function subscribePushChange(
