@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Archive,
   CircleDot,
+  MessageSquareText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -34,6 +35,7 @@ interface FeedbackRow {
   title: string;
   body: string;
   status: string;
+  admin_note: string | null;
   created_at: string;
 }
 
@@ -81,7 +83,7 @@ function FeedbackPage() {
     if (!user) return;
     const { data } = await supabase
       .from("app_feedback")
-      .select("id, category, title, body, status, created_at")
+      .select("id, category, title, body, status, admin_note, created_at")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(20);
@@ -189,17 +191,19 @@ function FeedbackPage() {
       <section className="space-y-2">
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground px-1">Your recent feedback</div>
         <div className="rounded-2xl border border-border/70 bg-muted/40 px-3 py-2 text-[10px] text-muted-foreground leading-relaxed">
-          Status updates from admins appear here in color:{" "}
+          You get a push when status changes (
           <span className="font-semibold text-sky-700">Submitted</span>,{" "}
           <span className="font-semibold text-violet-700">Reviewed</span>,{" "}
           <span className="font-semibold text-amber-800">Planned</span>,{" "}
-          <span className="font-semibold text-emerald-700">Done</span>.
+          <span className="font-semibold text-emerald-700">Done</span>
+          ) or when an admin leaves a note.
         </div>
         {mine.length === 0 && (
           <div className="text-center text-xs text-muted-foreground py-6">No feedback yet — be the first to suggest something!</div>
         )}
         {mine.map((f) => {
           const meta = feedbackStatusMeta(f.status);
+          const note = (f.admin_note ?? "").trim();
           return (
             <div
               key={f.id}
@@ -232,6 +236,15 @@ function FeedbackPage() {
                   <span className="block mt-1 opacity-90">Try the latest app update — your idea may already be live.</span>
                 )}
               </div>
+              {note ? (
+                <div className="mt-2.5 rounded-xl border border-primary/25 bg-primary/5 px-2.5 py-2.5">
+                  <div className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-primary">
+                    <MessageSquareText className="h-3 w-3" />
+                    Admin note
+                  </div>
+                  <p className="text-xs text-foreground mt-1 whitespace-pre-wrap leading-relaxed">{note}</p>
+                </div>
+              ) : null}
             </div>
           );
         })}

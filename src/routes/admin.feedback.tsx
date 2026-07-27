@@ -73,26 +73,50 @@ function AdminFeedback() {
 
   async function setStatus(id: string, status: string) {
     const row = rows.find((r) => r.id === id);
+    if (!row || row.status === status) return;
     const { error } = await supabase.from("app_feedback").update({ status }).eq("id", id);
     if (error) {
       toast.error(error.message);
       return;
     }
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
+    const meta = feedbackStatusMeta(status);
+    notifyUsers(
+      [row.user_id],
+      `Feedback ${meta.short}`,
+      `"${row.title}" is now ${meta.label}. ${meta.description}`,
+      "/feedback",
+    );
+    toast.success(`Marked ${meta.short} — student notified`);
     void load();
-    if (row && row.status !== status) {
-      const meta = feedbackStatusMeta(status);
-      notifyUsers(
-        [row.user_id],
-        `Feedback ${meta.short}`,
-        `"${row.title}" is now ${meta.label}. ${meta.description}`,
-        "/feedback",
-      );
-    }
   }
 
-  async function saveNote(id: string, admin_note: string) {
-    const { error } = await supabase.from("app_feedback").update({ admin_note }).eq("id", id);
-    if (error) toast.error(error.message);
+  async function saveNote(id: string, rawNote: string) {
+    const row = rows.find((r) => r.id === id);
+    if (!row) return;
+    const next = rawNote.trim() || null;
+    const prev = (row.admin_note ?? "").trim() || null;
+    if (next === prev) return;
+
+    const { error } = await supabase.from("app_feedback").update({ admin_note: next }).eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setRows((prevRows) => prevRows.map((r) => (r.id === id ? { ...r, admin_note: next } : r)));
+
+    if (next) {
+      const preview = next.length > 160 ? `${next.slice(0, 157)}…` : next;
+      notifyUsers(
+        [row.user_id],
+        "Admin note on your feedback",
+        `"${row.title}": ${preview}`,
+        "/feedback",
+      );
+      toast.success("Note saved — student notified");
+    } else {
+      toast.success("Note cleared");
+    }
   }
 
   return (
@@ -101,7 +125,9 @@ function AdminFeedback() {
         <Lightbulb className="h-5 w-5 text-primary" />
         <div>
           <h1 className="font-bold text-lg">Student feedback</h1>
-          <p className="text-xs text-muted-foreground">Ideas and suggestions from the app Feedback tab</p>
+          <p className="text-xs text-muted-foreground">
+            Status changes and notes notify the student with a push
+          </p>
         </div>
       </div>
 
@@ -187,13 +213,22 @@ function AdminFeedback() {
                   );
                 })}
               </div>
-              <textarea
-                defaultValue={f.admin_note ?? ""}
-                placeholder="Admin note (private)…"
-                rows={2}
-                onBlur={(e) => void saveNote(f.id, e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-muted border border-border text-xs outline-none focus:border-primary resize-none"
-              />
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Note to student (visible on their Feedback page)
+                </label>
+                <textarea
+                  key={`${f.id}:${f.admin_note ?? ""}`}
+                  defaultValue={f.admin_note ?? ""}
+                  placeholder="Write a reply the student will see…"
+                  rows={2}
+                  onBlur={(e) => void saveNote(f.id, e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-muted border border-border text-xs outline-none focus:border-primary resize-none"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Saves when you leave the field. Student gets a push if the note changed.
+                </p>
+              </div>
             </div>
           );
         })}
