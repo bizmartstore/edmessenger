@@ -40,7 +40,7 @@ function AdminLayout() {
   return (
     <div className="min-h-screen safe-top">
       <header className="sticky top-0 z-20 bg-background/85 backdrop-blur-lg border-b border-border">
-        <div className="max-w-3xl mx-auto flex items-center gap-3 px-4 py-3">
+        <div className="max-w-3xl mx-auto flex items-center gap-3 px-4 py-3 md:max-w-6xl lg:max-w-7xl">
           <Link to="/" className="p-2 -ml-2 rounded-xl hover:bg-muted"><ArrowLeft className="h-4 w-4" /></Link>
           <img src="/logo-pwa.png?v=3" alt="" className="h-9 w-9 rounded-xl object-contain bg-white p-0.5" />
           <div className="min-w-0 flex-1">
@@ -61,7 +61,7 @@ function AdminLayout() {
             </button>
           )}
         </div>
-        <div className="max-w-3xl mx-auto px-2 pb-2 overflow-x-auto">
+        <div className="max-w-3xl mx-auto px-2 pb-2 overflow-x-auto md:max-w-6xl lg:max-w-7xl">
           <div className="flex gap-1">
             {nav.map((n) => {
               const active = n.exact ? pathname === n.to : pathname === n.to || pathname.startsWith(n.to + "/");
@@ -81,7 +81,7 @@ function AdminLayout() {
           </div>
         </div>
       </header>
-      <main className="max-w-3xl mx-auto px-4 py-5 animate-fade-up pb-16">
+      <main className="max-w-3xl mx-auto px-4 py-5 animate-fade-up pb-16 md:max-w-6xl lg:max-w-7xl">
         <Outlet />
       </main>
     </div>

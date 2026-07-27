@@ -131,7 +131,7 @@ function FeedbackPage() {
   }
 
   return (
-    <div className="max-w-md mx-auto px-4 pt-5 pb-4 space-y-5">
+    <div className="max-w-md mx-auto px-4 pt-5 pb-4 space-y-5 md:max-w-3xl md:w-full md:px-0">
       <header>
         <div className="inline-flex items-center gap-2 text-primary text-xs font-semibold uppercase tracking-widest">
           <Lightbulb className="h-3.5 w-3.5" /> Feedback

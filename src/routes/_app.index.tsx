@@ -190,7 +190,7 @@ function Home() {
   ];
 
   return (
-    <div className="px-4 pt-6 max-w-md mx-auto pb-4">
+    <div className="px-4 pt-6 max-w-md mx-auto pb-4 md:max-w-none md:w-full md:px-0">
       <header className="flex items-center gap-3 px-1">
         <Link to="/profile" className="relative shrink-0">
           {profile?.avatar_url ? (

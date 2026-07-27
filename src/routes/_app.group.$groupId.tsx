@@ -409,7 +409,7 @@ function GroupChatPage() {
 
   if (!info && !loading) {
     return (
-      <div className="max-w-md mx-auto px-4 pt-8 text-center space-y-3">
+      <div className="max-w-md mx-auto px-4 pt-8 text-center space-y-3 md:max-w-none md:w-full md:px-0">
         <div className="text-sm font-semibold">Group not found</div>
         <Link to="/chat" className="text-sm text-primary font-medium">
           ← Back to chat
@@ -420,7 +420,7 @@ function GroupChatPage() {
 
   if (info && !info.is_member) {
     return (
-      <div className="max-w-md mx-auto px-4 pt-4 pb-4">
+      <div className="max-w-md mx-auto px-4 pt-4 pb-4 md:max-w-none md:w-full md:px-0">
         <header className="flex items-center gap-3 pb-4">
           <Link to="/chat" className="p-2 -ml-2 rounded-xl hover:bg-muted">
             <ArrowLeft className="h-5 w-5" />
@@ -463,7 +463,7 @@ function GroupChatPage() {
   }
 
   return (
-    <div className="max-w-md mx-auto px-4 pt-4 pb-4 flex flex-col h-[calc(100dvh-7rem)]">
+    <div className="max-w-md mx-auto px-4 pt-4 pb-4 flex flex-col h-[calc(100dvh-7rem)] md:max-w-none md:w-full md:px-0 md:h-[calc(100dvh-1.5rem)]">
       <header className="flex items-center gap-3 pb-3 border-b border-border">
         <Link to="/chat" className="p-2 -ml-2 rounded-xl hover:bg-muted">
           <ArrowLeft className="h-5 w-5" />

@@ -62,7 +62,7 @@ export function PwaInstallPrompt() {
   }
 
   return (
-    <div className="fixed bottom-24 inset-x-0 z-50 px-3 pointer-events-none safe-bottom">
+    <div className="fixed bottom-24 inset-x-0 z-50 px-3 pointer-events-none safe-bottom md:hidden">
       <div className="pointer-events-auto max-w-md mx-auto glass-card rounded-2xl p-3 flex items-start gap-3 shadow-glow border border-border animate-fade-up">
         <img src="/logo-pwa.png?v=3" alt="" className="h-12 w-12 rounded-xl object-contain bg-white p-0.5 shrink-0" />
         <div className="min-w-0 flex-1">

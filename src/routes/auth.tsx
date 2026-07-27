@@ -37,7 +37,7 @@ function AuthPage() {
 
   return (
     <div className="min-h-screen flex flex-col safe-top">
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 max-w-md mx-auto w-full">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 max-w-md mx-auto w-full md:max-w-lg">
         <img
           src="/logo.png?v=3"
           alt="EdMessenger"

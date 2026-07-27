@@ -49,7 +49,7 @@ function ActivitiesPage() {
   });
 
   return (
-    <div className="max-w-md mx-auto px-5 pt-6 pb-4">
+    <div className="max-w-md mx-auto px-5 pt-6 pb-4 md:max-w-none md:w-full md:px-0">
       <header className="flex items-center gap-3 mb-4">
         <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-sky-400 to-blue-600 grid place-items-center shadow-glow">
           <FolderKanban className="h-5 w-5 text-white" />

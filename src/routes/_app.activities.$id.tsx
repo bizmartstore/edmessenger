@@ -102,7 +102,7 @@ function ActivityDetail() {
   }
 
   return (
-    <div className="max-w-md mx-auto px-5 pt-4 pb-8">
+    <div className="max-w-md mx-auto px-5 pt-4 pb-8 md:max-w-3xl md:w-full md:px-0">
       <header className="flex items-center gap-2 mb-4">
         <Link to="/activities" className="p-2 -ml-2 rounded-xl hover:bg-muted">
           <ArrowLeft className="h-5 w-5" />

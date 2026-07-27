@@ -101,7 +101,7 @@ function TakeReviewer() {
   const score = questions.reduce((n, q) => n + (answers[q.id] === q.correct_index ? 1 : 0), 0);
 
   return (
-    <div className="max-w-md mx-auto px-5 pt-6 pb-8">
+    <div className="max-w-md mx-auto px-5 pt-6 pb-8 md:max-w-3xl md:w-full md:px-0">
       <Link
         to="/lessons"
         search={{ tab: "reviewers" }}

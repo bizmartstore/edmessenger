@@ -2,6 +2,7 @@ import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { BottomNav } from "@/components/BottomNav";
+import { DesktopSidebar } from "@/components/DesktopSidebar";
 import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
 import { UnreadBadgesProvider } from "@/hooks/useUnreadBadges";
 import { PresenceProvider } from "@/hooks/usePresence";
@@ -32,12 +33,16 @@ function AppLayout() {
     <UnreadBadgesProvider>
       <PresenceProvider>
         <GamesProvider>
-          <div className="min-h-screen flex flex-col safe-top">
-            <main className="flex-1 pb-24 animate-fade-up">
-              <Outlet />
-            </main>
-            <BottomNav />
-            <PwaInstallPrompt />
+          {/* Mobile: stacked column + bottom nav. Desktop (md+): sidebar + full-width main. */}
+          <div className="min-h-screen flex flex-col md:flex-row safe-top">
+            <DesktopSidebar />
+            <div className="min-h-screen flex-1 flex flex-col min-w-0">
+              <main className="flex-1 pb-24 md:pb-6 animate-fade-up md:px-8 md:pt-2">
+                <Outlet />
+              </main>
+              <BottomNav />
+              <PwaInstallPrompt />
+            </div>
           </div>
         </GamesProvider>
       </PresenceProvider>

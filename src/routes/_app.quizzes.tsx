@@ -57,7 +57,7 @@ function QuizzesList() {
   });
 
   return (
-    <div className="max-w-md mx-auto px-5 pt-6">
+    <div className="max-w-md mx-auto px-5 pt-6 md:max-w-none md:w-full md:px-0">
       <header className="flex items-center gap-3">
         <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 grid place-items-center shadow-glow">
           <ClipboardList className="h-5 w-5 text-white" />

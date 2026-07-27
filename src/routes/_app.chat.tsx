@@ -373,7 +373,7 @@ function ChatPage() {
     "relative flex-1 py-2 rounded-2xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition-all";
 
   return (
-    <div className="max-w-md mx-auto px-3 pt-4 pb-4 flex flex-col h-[calc(100dvh-7rem)]">
+    <div className="max-w-md mx-auto px-3 pt-4 pb-4 flex flex-col h-[calc(100dvh-7rem)] md:max-w-none md:w-full md:px-0 md:h-[calc(100dvh-1.5rem)]">
       <div className="flex items-center gap-1.5 mb-3">
         <button
           onClick={() => setTab("class")}

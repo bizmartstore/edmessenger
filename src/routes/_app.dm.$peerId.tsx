@@ -100,7 +100,7 @@ function DMPage() {
   }
 
   return (
-    <div className="max-w-md mx-auto px-4 pt-4 pb-4 flex flex-col h-[calc(100dvh-7rem)]">
+    <div className="max-w-md mx-auto px-4 pt-4 pb-4 flex flex-col h-[calc(100dvh-7rem)] md:max-w-none md:w-full md:px-0 md:h-[calc(100dvh-1.5rem)]">
       <header className="flex items-center gap-3 pb-3 border-b border-border">
         <Link to="/chat" className="p-2 -ml-2 rounded-xl hover:bg-muted">
           <ArrowLeft className="h-5 w-5" />

@@ -55,7 +55,7 @@ function TakeQuiz() {
   if (!quiz) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
 
   return (
-    <div className="max-w-md mx-auto px-5 pt-6">
+    <div className="max-w-md mx-auto px-5 pt-6 md:max-w-3xl md:w-full md:px-0">
       <Link to="/quizzes" className="inline-flex items-center gap-1 text-xs text-muted-foreground mb-3">
         <ArrowLeft className="h-3.5 w-3.5" /> All quizzes
       </Link>

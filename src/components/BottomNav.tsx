@@ -27,7 +27,7 @@ export function BottomNav() {
   const { openGames } = useGames();
 
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-40 safe-bottom pb-2 px-2 pointer-events-none">
+    <nav className="fixed bottom-0 inset-x-0 z-40 safe-bottom pb-2 px-2 pointer-events-none md:hidden">
       <div
         className="glass-card pointer-events-auto mx-auto max-w-md overflow-x-auto overscroll-x-contain rounded-3xl scrollbar-none touch-pan-x"
         style={{ WebkitOverflowScrolling: "touch" }}
