@@ -22,6 +22,10 @@ import { useLiveReload } from "@/hooks/useLiveReload";
 import { useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { notifyAllExcept, notifyUsers } from "@/lib/push";
 import { WALL_FEELINGS, WALL_REACTIONS } from "@/lib/social";
+import { ReactionViewersDialog } from "@/components/ReactionViewers";
+import { useGcoins } from "@/hooks/useGcoins";
+import { awardGcoins } from "@/lib/gcoins";
+import { chatBackgroundStyle } from "@/lib/store-catalog";
 
 interface WallPost {
   id: string;
@@ -52,6 +56,7 @@ const WALL_LIMIT = 40;
 
 export function PostWall() {
   const { user, profile, isAdmin } = useAuth();
+  const { wallet } = useGcoins();
   const { markRead, counts } = useUnreadBadges();
   const [posts, setPosts] = useState<WallPost[]>([]);
   const [social, setSocial] = useState<Record<string, PostSocial>>({});
@@ -66,9 +71,11 @@ export function PostWall() {
   const [openComments, setOpenComments] = useState<Record<string, boolean>>({});
   const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
   const [reactPicker, setReactPicker] = useState<string | null>(null);
+  const [viewersFor, setViewersFor] = useState<string | null>(null);
   const imgRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const wallBg = chatBackgroundStyle(wallet.cosmetics.bg_wall);
 
   const loadSocial = useCallback(async (ids: string[]) => {
     if (!ids.length) {
@@ -186,6 +193,7 @@ export function PostWall() {
       if (error) throw error;
       const preview = text.trim() || (pending.length ? "Shared a file" : "New post");
       notifyAllExcept([user.id], `${profile?.full_name ?? "Someone"} on the wall`, preview, "/");
+      awardGcoins("wall_post");
       void supabase.rpc("prune_wall_posts");
       setText("");
       setFeeling(null);
@@ -392,7 +400,7 @@ export function PostWall() {
         )}
       </div>
 
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 space-y-3 rounded-3xl p-1" style={wallBg}>
         {loading && posts.length === 0 && (
           <div className="text-center text-xs text-muted-foreground py-8">Loading wall…</div>
         )}
@@ -451,9 +459,15 @@ export function PostWall() {
                       .filter(([, n]) => Number(n) > 0)
                       .sort((a, b) => Number(b[1]) - Number(a[1]))
                       .map(([emoji, n]) => (
-                        <span key={emoji} className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5">
+                        <button
+                          key={emoji}
+                          type="button"
+                          title="See who reacted"
+                          onClick={() => setViewersFor(p.id)}
+                          className="inline-flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 hover:bg-secondary"
+                        >
                           {emoji} {n}
-                        </span>
+                        </button>
                       ))}
                   </div>
                   <button
@@ -557,6 +571,15 @@ export function PostWall() {
           );
         })}
       </div>
+      <ReactionViewersDialog
+        open={Boolean(viewersFor)}
+        onOpenChange={(v) => {
+          if (!v) setViewersFor(null);
+        }}
+        source="wall"
+        targetId={viewersFor}
+        title="Who reacted"
+      />
     </section>
   );
 }

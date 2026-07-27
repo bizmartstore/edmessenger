@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { ArrowLeft, CheckCircle2, Lightbulb, RotateCcw, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import { awardGcoins } from "@/lib/gcoins";
 
 export const Route = createFileRoute("/_app/lessons_/reviewers/$id")({
   component: TakeReviewer,
@@ -84,6 +85,7 @@ function TakeReviewer() {
       return;
     }
     setFinished(true);
+    awardGcoins("complete_reviewer", `complete_reviewer:${id}`);
     toast.success(`You scored ${score}/${questions.length}`);
   }
 

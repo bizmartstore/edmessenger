@@ -28,6 +28,7 @@ import { Route as AdminAttendanceRouteImport } from './routes/admin.attendance'
 import { Route as AdminBannersRouteImport } from './routes/admin.banners'
 import { Route as AdminFeedbackRouteImport } from './routes/admin.feedback'
 import { Route as AdminGamesRouteImport } from './routes/admin.games'
+import { Route as AdminGcoinsRouteImport } from './routes/admin.gcoins'
 import { Route as AdminLessonsRouteImport } from './routes/admin.lessons'
 import { Route as AdminQuizzesRouteImport } from './routes/admin.quizzes'
 import { Route as AdminStudentsRouteImport } from './routes/admin.students'
@@ -131,6 +132,11 @@ const AdminGamesRoute = AdminGamesRouteImport.update({
   path: '/games',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminGcoinsRoute = AdminGcoinsRouteImport.update({
+  id: '/gcoins',
+  path: '/gcoins',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminLessonsRoute = AdminLessonsRouteImport.update({
   id: '/lessons',
   path: '/lessons',
@@ -190,6 +196,7 @@ export interface FileRoutesByFullPath {
   '/admin/banners': typeof AdminBannersRoute
   '/admin/feedback': typeof AdminFeedbackRoute
   '/admin/games': typeof AdminGamesRoute
+  '/admin/gcoins': typeof AdminGcoinsRoute
   '/admin/lessons': typeof AdminLessonsRoute
   '/admin/quizzes': typeof AdminQuizzesRoute
   '/admin/students': typeof AdminStudentsRoute
@@ -216,6 +223,7 @@ export interface FileRoutesByTo {
   '/admin/banners': typeof AdminBannersRoute
   '/admin/feedback': typeof AdminFeedbackRoute
   '/admin/games': typeof AdminGamesRoute
+  '/admin/gcoins': typeof AdminGcoinsRoute
   '/admin/lessons': typeof AdminLessonsRoute
   '/admin/quizzes': typeof AdminQuizzesRoute
   '/admin/students': typeof AdminStudentsRoute
@@ -246,6 +254,7 @@ export interface FileRoutesById {
   '/admin/banners': typeof AdminBannersRoute
   '/admin/feedback': typeof AdminFeedbackRoute
   '/admin/games': typeof AdminGamesRoute
+  '/admin/gcoins': typeof AdminGcoinsRoute
   '/admin/lessons': typeof AdminLessonsRoute
   '/admin/quizzes': typeof AdminQuizzesRoute
   '/admin/students': typeof AdminStudentsRoute
@@ -277,6 +286,7 @@ export interface FileRouteTypes {
     | '/admin/banners'
     | '/admin/feedback'
     | '/admin/games'
+    | '/admin/gcoins'
     | '/admin/lessons'
     | '/admin/quizzes'
     | '/admin/students'
@@ -303,6 +313,7 @@ export interface FileRouteTypes {
     | '/admin/banners'
     | '/admin/feedback'
     | '/admin/games'
+    | '/admin/gcoins'
     | '/admin/lessons'
     | '/admin/quizzes'
     | '/admin/students'
@@ -332,6 +343,7 @@ export interface FileRouteTypes {
     | '/admin/banners'
     | '/admin/feedback'
     | '/admin/games'
+    | '/admin/gcoins'
     | '/admin/lessons'
     | '/admin/quizzes'
     | '/admin/students'
@@ -485,6 +497,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminGamesRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/gcoins': {
+      id: '/admin/gcoins'
+      path: '/gcoins'
+      fullPath: '/admin/gcoins'
+      preLoaderRoute: typeof AdminGcoinsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/lessons': {
       id: '/admin/lessons'
       path: '/lessons'
@@ -607,6 +626,7 @@ interface AdminRouteChildren {
   AdminBannersRoute: typeof AdminBannersRoute
   AdminFeedbackRoute: typeof AdminFeedbackRoute
   AdminGamesRoute: typeof AdminGamesRoute
+  AdminGcoinsRoute: typeof AdminGcoinsRoute
   AdminLessonsRoute: typeof AdminLessonsRoute
   AdminQuizzesRoute: typeof AdminQuizzesRoute
   AdminStudentsRoute: typeof AdminStudentsRoute
@@ -620,6 +640,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminBannersRoute: AdminBannersRoute,
   AdminFeedbackRoute: AdminFeedbackRoute,
   AdminGamesRoute: AdminGamesRoute,
+  AdminGcoinsRoute: AdminGcoinsRoute,
   AdminLessonsRoute: AdminLessonsRoute,
   AdminQuizzesRoute: AdminQuizzesRoute,
   AdminStudentsRoute: AdminStudentsRoute,

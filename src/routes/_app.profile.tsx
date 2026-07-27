@@ -4,9 +4,10 @@ import { useAuth, type Profile } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { uploadToBucket, humanSize } from "@/lib/upload";
 import { toast } from "sonner";
-import { ArrowLeft, Camera, CheckCircle2, ClipboardList, FolderKanban, Save } from "lucide-react";
+import { ArrowLeft, Camera, CheckCircle2, ClipboardList, Coins, FolderKanban, Save } from "lucide-react";
 import { NotificationStatusCard } from "@/components/NotificationStatusCard";
 import { formatDistanceToNow } from "date-fns";
+import { useGcoins } from "@/hooks/useGcoins";
 
 export const Route = createFileRoute("/_app/profile")({
   component: ProfilePage,
@@ -28,6 +29,7 @@ interface ActivityRow {
 
 function ProfilePage() {
   const { user, profile, refresh } = useAuth();
+  const { wallet, loading: gcoinsLoading } = useGcoins();
   const [fullName, setFullName] = useState("");
   const [school, setSchool] = useState("");
   const [contact, setContact] = useState("");
@@ -158,6 +160,32 @@ function ProfilePage() {
         <p className="text-[10px] text-muted-foreground text-center">
           Photo is compressed automatically and shown in chat
         </p>
+      </div>
+
+      <div className="mb-4 rounded-2xl border border-amber-400/30 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/20 p-4 shadow-card">
+        <div className="flex items-center gap-3">
+          <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 grid place-items-center text-white shadow-soft shrink-0">
+            <Coins className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] uppercase tracking-widest text-amber-800/70 dark:text-amber-200/70 font-semibold">
+              Gotchi Coins
+            </div>
+            <div className="text-2xl font-extrabold text-amber-950 dark:text-amber-50 tabular-nums">
+              {gcoinsLoading ? "…" : wallet.gcoins}
+              <span className="text-sm font-semibold ml-1 opacity-70">GCoins</span>
+            </div>
+            <div className="text-[11px] text-amber-900/70 dark:text-amber-100/60 mt-0.5">
+              Today {wallet.daily_earned}/{wallet.daily_cap} earned · spend in Chat → Store
+            </div>
+          </div>
+          <Link
+            to="/chat"
+            className="shrink-0 px-3 py-2 rounded-xl bg-amber-500 text-white text-xs font-bold shadow-soft"
+          >
+            Store
+          </Link>
+        </div>
       </div>
 
       <div className="space-y-3 rounded-2xl bg-card border border-border p-4 shadow-card">

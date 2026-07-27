@@ -20,6 +20,7 @@ import { useLiveReload } from "@/hooks/useLiveReload";
 import { formatDistanceToNow } from "date-fns";
 import { feedbackStatusMeta, type FeedbackStatus } from "@/lib/feedback-status";
 import { cn } from "@/lib/utils";
+import { awardGcoins } from "@/lib/gcoins";
 
 export const Route = createFileRoute("/_app/feedback")({
   component: FeedbackPage,
@@ -118,6 +119,7 @@ function FeedbackPage() {
         `${name}: ${title.trim()}`,
         "/admin/feedback",
       );
+      awardGcoins("feedback");
       setTitle("");
       setBody("");
       setCategory("feature");

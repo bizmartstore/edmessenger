@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { z } from "zod";
+import { awardGcoins, utcDayKey } from "@/lib/gcoins";
 
 const lessonsSearchSchema = z.object({
   tab: z.enum(["materials", "reviewers"]).optional().catch(undefined),
@@ -128,12 +129,17 @@ function LessonsPage() {
     setDownloadingId(l.id);
     try {
       await downloadFile(l.file_url, downloadName(l));
+      awardGcoins("download_lesson", `download_lesson:${l.id}`);
       toast.success("Download started");
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Download failed");
     } finally {
       setDownloadingId(null);
     }
+  }
+
+  function onViewLesson(l: Lesson) {
+    awardGcoins("view_lesson", `view_lesson:${l.id}:${utcDayKey()}`);
   }
 
   const lessonTitle = (id: string | null) => lessons.find((l) => l.id === id)?.title;
@@ -194,6 +200,7 @@ function LessonsPage() {
                   href={l.file_url}
                   target="_blank"
                   rel="noopener"
+                  onClick={() => onViewLesson(l)}
                   className="flex-1 py-2 rounded-xl bg-muted hover:bg-secondary flex items-center justify-center gap-1.5 text-xs font-semibold"
                 >
                   <Eye className="h-3.5 w-3.5" /> Read

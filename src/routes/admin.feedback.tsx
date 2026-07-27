@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useLiveReload } from "@/hooks/useLiveReload";
 import { feedbackStatusMeta } from "@/lib/feedback-status";
 import { cn } from "@/lib/utils";
+import { notifyUsers } from "@/lib/push";
 
 export const Route = createFileRoute("/admin/feedback")({
   component: AdminFeedback,
@@ -71,9 +72,22 @@ function AdminFeedback() {
   useLiveReload("admin-feedback-live", [{ table: "app_feedback", event: "*" }], load, { debounceMs: 500 });
 
   async function setStatus(id: string, status: string) {
+    const row = rows.find((r) => r.id === id);
     const { error } = await supabase.from("app_feedback").update({ status }).eq("id", id);
-    if (error) toast.error(error.message);
-    else void load();
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    void load();
+    if (row && row.status !== status) {
+      const meta = feedbackStatusMeta(status);
+      notifyUsers(
+        [row.user_id],
+        `Feedback ${meta.short}`,
+        `"${row.title}" is now ${meta.label}. ${meta.description}`,
+        "/feedback",
+      );
+    }
   }
 
   async function saveNote(id: string, admin_note: string) {

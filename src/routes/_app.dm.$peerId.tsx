@@ -17,6 +17,9 @@ import {
 } from "@/lib/chat-cache";
 import { useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { notifyUsers } from "@/lib/push";
+import { useGcoins } from "@/hooks/useGcoins";
+import { awardGcoins } from "@/lib/gcoins";
+import { bubbleClasses, chatBackgroundStyle } from "@/lib/store-catalog";
 
 export const Route = createFileRoute("/_app/dm/$peerId")({
   component: DMPage,
@@ -25,11 +28,14 @@ export const Route = createFileRoute("/_app/dm/$peerId")({
 function DMPage() {
   const { peerId } = Route.useParams();
   const { user, profile } = useAuth();
+  const { wallet } = useGcoins();
   const { markRead } = useUnreadBadges();
   const [peer, setPeer] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
   const [msgs, setMsgs] = useState<DmMsg[]>(() => getDmCache(peerId));
   const [loading, setLoading] = useState(() => getDmCache(peerId).length === 0);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const bubbleId = wallet.cosmetics.active_bubble;
+  const dmBg = chatBackgroundStyle(wallet.cosmetics.bg_dm);
 
   useEffect(() => {
     void markRead("dms");
@@ -95,6 +101,7 @@ function DMPage() {
       setMsgs([...appendDmCache(peerId, data as DmMsg)]);
       const preview = text.trim() || (attachments.length ? "Sent an attachment" : "New message");
       notifyUsers([peerId], profile?.full_name ?? "New message", preview, `/dm/${user.id}`);
+      awardGcoins("dm_message");
     }
     void supabase.rpc("prune_dm_thread", { peer: peerId });
   }
@@ -118,7 +125,7 @@ function DMPage() {
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto space-y-3 pr-1 py-3">
+      <div className="flex-1 overflow-y-auto space-y-3 pr-1 py-3 rounded-2xl" style={dmBg}>
         {loading && msgs.length === 0 && <div className="text-center text-xs text-muted-foreground py-10">Loading…</div>}
         {!loading && msgs.length === 0 && <div className="text-center text-xs text-muted-foreground py-10">No messages yet.</div>}
         {msgs.map((m) => {
@@ -126,7 +133,7 @@ function DMPage() {
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"} animate-fade-up`}>
               <div
-                className={`max-w-[80%] rounded-2xl px-3 py-2 ${mine ? "gradient-primary text-primary-foreground rounded-br-md" : "bg-card border border-border rounded-bl-md"}`}
+                className={`max-w-[80%] rounded-2xl px-3 py-2 ${bubbleClasses(bubbleId, mine)}`}
               >
                 {m.content && <div className="text-sm whitespace-pre-wrap break-words">{m.content}</div>}
                 <AttachmentList files={m.attachments} />

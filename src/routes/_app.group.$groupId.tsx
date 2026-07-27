@@ -35,6 +35,10 @@ import { notifyUsers } from "@/lib/push";
 import { fetchUploadQuota, type QuotaStatus } from "@/lib/upload-quota";
 import { GROUP_ICEBREAKERS, GROUP_REACTIONS } from "@/lib/social";
 import { GroupQuizzesPanel } from "@/components/GroupQuizzesPanel";
+import { ReactionViewersDialog } from "@/components/ReactionViewers";
+import { useGcoins } from "@/hooks/useGcoins";
+import { awardGcoins } from "@/lib/gcoins";
+import { bubbleClasses, chatBackgroundStyle } from "@/lib/store-catalog";
 
 export const Route = createFileRoute("/_app/group/$groupId")({
   component: GroupChatPage,
@@ -70,6 +74,7 @@ async function resolveProfile(userId: string) {
 function GroupChatPage() {
   const { groupId } = Route.useParams();
   const { user, profile } = useAuth();
+  const { wallet } = useGcoins();
   const { markRead } = useUnreadBadges();
   const navigate = useNavigate();
   const [info, setInfo] = useState<GroupInfo | null>(null);
@@ -86,9 +91,12 @@ function GroupChatPage() {
   const [pollOpts, setPollOpts] = useState(["", ""]);
   const [pinnedPreview, setPinnedPreview] = useState<GroupMsg | null>(null);
   const [reactFor, setReactFor] = useState<string | null>(null);
+  const [viewersFor, setViewersFor] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
   const [quizOpen, setQuizOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const bubbleId = wallet.cosmetics.active_bubble;
+  const groupBg = chatBackgroundStyle(wallet.cosmetics.bg_group);
 
   useEffect(() => {
     void markRead("groups");
@@ -326,6 +334,7 @@ function GroupChatPage() {
       if (ids.length) {
         notifyUsers(ids, `${info?.name ?? "Group"} · ${profile?.full_name ?? "Someone"}`, preview, `/group/${groupId}`);
       }
+      awardGcoins("group_message");
       void fetchUploadQuota("group").then(setQuota);
     }
     void supabase.rpc("prune_group_messages", { p_group: groupId });
@@ -572,7 +581,7 @@ function GroupChatPage() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto space-y-3 pr-1 py-3">
+      <div className="flex-1 overflow-y-auto space-y-3 pr-1 py-3 rounded-2xl" style={groupBg}>
         {loading && msgs.length === 0 && <div className="text-center text-xs text-muted-foreground py-10">Loading…</div>}
         {!loading && msgs.length === 0 && (
           <div className="text-center text-xs text-muted-foreground py-10">No messages yet. Try an icebreaker!</div>
@@ -599,9 +608,7 @@ function GroupChatPage() {
                   className={`rounded-2xl px-3 py-2 ${
                     removed
                       ? "bg-muted/60 border border-dashed border-border text-muted-foreground"
-                      : mine
-                        ? "gradient-primary text-primary-foreground rounded-br-md"
-                        : "bg-card border border-border rounded-bl-md"
+                      : bubbleClasses(bubbleId, mine)
                   }`}
                 >
                   {!mine && !removed && <div className="text-[10px] font-semibold opacity-70 mb-0.5">{name}</div>}
@@ -673,7 +680,12 @@ function GroupChatPage() {
                       <button
                         key={e}
                         type="button"
-                        onClick={() => void react(m.id, e)}
+                        title="See who reacted"
+                        onClick={() => setViewersFor(m.id)}
+                        onContextMenu={(ev) => {
+                          ev.preventDefault();
+                          void react(m.id, e);
+                        }}
                         className="text-[11px] rounded-full bg-card border border-border px-1.5 py-0.5 shadow-soft"
                       >
                         {e} {n}
@@ -746,6 +758,15 @@ function GroupChatPage() {
           onClose={() => setQuizOpen(false)}
         />
       )}
+      <ReactionViewersDialog
+        open={Boolean(viewersFor)}
+        onOpenChange={(v) => {
+          if (!v) setViewersFor(null);
+        }}
+        source="group"
+        targetId={viewersFor}
+        title="Who reacted"
+      />
     </div>
   );
 }

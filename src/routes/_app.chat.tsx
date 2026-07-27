@@ -17,6 +17,7 @@ import {
   KeyRound,
   Loader2,
   Circle,
+  Store,
 } from "lucide-react";
 import { CLASSROOM_REACTIONS } from "@/lib/social";
 import {
@@ -35,6 +36,11 @@ import { useLiveReload } from "@/hooks/useLiveReload";
 import { usePresence } from "@/hooks/usePresence";
 import { notifyAllExcept } from "@/lib/push";
 import { toast } from "sonner";
+import { ReactionViewersDialog } from "@/components/ReactionViewers";
+import { ChatStorePanel } from "@/components/ChatStorePanel";
+import { useGcoins } from "@/hooks/useGcoins";
+import { awardGcoins } from "@/lib/gcoins";
+import { bubbleClasses, chatBackgroundStyle } from "@/lib/store-catalog";
 
 export const Route = createFileRoute("/_app/chat")({
   component: ChatPage,
@@ -97,10 +103,11 @@ async function resolveClassProfile(userId: string): Promise<ClassMsg["profiles"]
 
 function ChatPage() {
   const { user, profile } = useAuth();
+  const { wallet } = useGcoins();
   const { counts, markRead } = useUnreadBadges();
   const { online } = usePresence();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"class" | "dms" | "groups">("class");
+  const [tab, setTab] = useState<"class" | "dms" | "groups" | "store">("class");
   const [messages, setMessages] = useState<ClassMsg[]>(() => getClassroomCache());
   const [loading, setLoading] = useState(() => getClassroomCache().length === 0);
   const [dms, setDms] = useState<DMPreview[]>([]);
@@ -120,7 +127,10 @@ function ChatPage() {
   const [deletingPeer, setDeletingPeer] = useState<string | null>(null);
   const [reactions, setReactions] = useState<Record<string, Record<string, number>>>({});
   const [reactFor, setReactFor] = useState<string | null>(null);
+  const [viewersFor, setViewersFor] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const bubbleId = wallet.cosmetics.active_bubble;
+  const classBg = chatBackgroundStyle(wallet.cosmetics.bg_classroom);
 
   const loadReactions = useCallback(async (ids: string[]) => {
     if (!ids.length) return;
@@ -131,7 +141,7 @@ function ChatPage() {
   useEffect(() => {
     if (tab === "class") void markRead("classroom");
     else if (tab === "dms") void markRead("dms");
-    else void markRead("groups");
+    else if (tab === "groups") void markRead("groups");
   }, [tab, markRead]);
 
   const refreshClassroom = useCallback(async () => {
@@ -271,6 +281,7 @@ function ChatPage() {
       setMessages([...next]);
       const preview = text.trim() || (attachments.length ? "Sent an attachment" : "New message");
       notifyAllExcept([user.id], profile?.full_name ?? "Classroom", preview, "/chat");
+      awardGcoins("classroom_message");
     }
     void supabase.rpc("prune_classroom_messages");
   }
@@ -370,11 +381,11 @@ function ChatPage() {
   }
 
   const tabBtn =
-    "relative flex-1 py-2 rounded-2xl text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 transition-all";
+    "relative flex-1 py-2 rounded-2xl text-[10px] sm:text-xs font-semibold flex items-center justify-center gap-0.5 sm:gap-1 transition-all";
 
   return (
     <div className="max-w-md mx-auto px-3 pt-4 pb-4 flex flex-col h-[calc(100dvh-7rem)] md:max-w-none md:w-full md:px-0 md:h-[calc(100dvh-1.5rem)]">
-      <div className="flex items-center gap-1.5 mb-3">
+      <div className="flex items-center gap-1 mb-3">
         <button
           onClick={() => setTab("class")}
           className={`${tabBtn} ${tab === "class" ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground"}`}
@@ -399,11 +410,20 @@ function ChatPage() {
           <span className="truncate">Groups</span>
           {tab !== "groups" && <UnreadBadge count={counts.groups} className="top-0.5 right-1" />}
         </button>
+        <button
+          onClick={() => setTab("store")}
+          className={`${tabBtn} ${tab === "store" ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground"}`}
+        >
+          <Store className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">Store</span>
+        </button>
       </div>
 
-      {tab === "class" ? (
+      {tab === "store" ? (
+        <ChatStorePanel />
+      ) : tab === "class" ? (
         <>
-          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1 rounded-2xl" style={classBg}>
             {loading && messages.length === 0 && (
               <div className="text-center text-xs text-muted-foreground py-10">Loading messages…</div>
             )}
@@ -430,9 +450,7 @@ function ChatPage() {
                       className={`rounded-2xl px-3 py-2 ${
                         removed
                           ? "bg-muted/60 border border-dashed border-border text-muted-foreground rounded-2xl"
-                          : mine
-                            ? "gradient-primary text-primary-foreground rounded-br-md"
-                            : "bg-card border border-border rounded-bl-md"
+                          : bubbleClasses(bubbleId, mine)
                       }`}
                     >
                       {!mine && !removed && <div className="text-[10px] font-semibold opacity-70 mb-0.5">{name}</div>}
@@ -468,7 +486,12 @@ function ChatPage() {
                           <button
                             key={e}
                             type="button"
-                            onClick={() => void reactClass(m.id, e)}
+                            title="See who reacted"
+                            onClick={() => setViewersFor(m.id)}
+                            onContextMenu={(ev) => {
+                              ev.preventDefault();
+                              void reactClass(m.id, e);
+                            }}
                             className="text-[11px] rounded-full bg-card border border-border px-1.5 py-0.5 shadow-soft"
                           >
                             {e} {n}
@@ -779,6 +802,16 @@ function ChatPage() {
           ))}
         </div>
       )}
+
+      <ReactionViewersDialog
+        open={Boolean(viewersFor)}
+        onOpenChange={(v) => {
+          if (!v) setViewersFor(null);
+        }}
+        source="classroom"
+        targetId={viewersFor}
+        title="Who reacted"
+      />
     </div>
   );
 }
