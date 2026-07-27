@@ -18,7 +18,6 @@ import {
 import { useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { notifyUsers } from "@/lib/push";
 import { useGcoins } from "@/hooks/useGcoins";
-import { awardGcoins } from "@/lib/gcoins";
 import { bubbleClasses, chatBackgroundStyle } from "@/lib/store-catalog";
 
 export const Route = createFileRoute("/_app/dm/$peerId")({
@@ -28,7 +27,7 @@ export const Route = createFileRoute("/_app/dm/$peerId")({
 function DMPage() {
   const { peerId } = Route.useParams();
   const { user, profile } = useAuth();
-  const { wallet } = useGcoins();
+  const { wallet, earn } = useGcoins();
   const { markRead } = useUnreadBadges();
   const [peer, setPeer] = useState<{ full_name: string | null; avatar_url: string | null } | null>(null);
   const [msgs, setMsgs] = useState<DmMsg[]>(() => getDmCache(peerId));
@@ -101,7 +100,7 @@ function DMPage() {
       setMsgs([...appendDmCache(peerId, data as DmMsg)]);
       const preview = text.trim() || (attachments.length ? "Sent an attachment" : "New message");
       notifyUsers([peerId], profile?.full_name ?? "New message", preview, `/dm/${user.id}`);
-      awardGcoins("dm_message");
+      void earn("dm_message");
     }
     void supabase.rpc("prune_dm_thread", { peer: peerId });
   }

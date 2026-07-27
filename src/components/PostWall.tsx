@@ -24,7 +24,6 @@ import { notifyAllExcept, notifyUsers } from "@/lib/push";
 import { WALL_FEELINGS, WALL_REACTIONS } from "@/lib/social";
 import { ReactionViewersDialog } from "@/components/ReactionViewers";
 import { useGcoins } from "@/hooks/useGcoins";
-import { awardGcoins } from "@/lib/gcoins";
 import { chatBackgroundStyle } from "@/lib/store-catalog";
 
 interface WallPost {
@@ -56,7 +55,7 @@ const WALL_LIMIT = 40;
 
 export function PostWall() {
   const { user, profile, isAdmin } = useAuth();
-  const { wallet } = useGcoins();
+  const { wallet, earn } = useGcoins();
   const { markRead, counts } = useUnreadBadges();
   const [posts, setPosts] = useState<WallPost[]>([]);
   const [social, setSocial] = useState<Record<string, PostSocial>>({});
@@ -193,7 +192,7 @@ export function PostWall() {
       if (error) throw error;
       const preview = text.trim() || (pending.length ? "Shared a file" : "New post");
       notifyAllExcept([user.id], `${profile?.full_name ?? "Someone"} on the wall`, preview, "/");
-      awardGcoins("wall_post");
+      void earn("wall_post");
       void supabase.rpc("prune_wall_posts");
       setText("");
       setFeeling(null);

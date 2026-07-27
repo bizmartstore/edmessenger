@@ -10,7 +10,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { z } from "zod";
-import { awardGcoins, utcDayKey } from "@/lib/gcoins";
+import { useGcoins } from "@/hooks/useGcoins";
+import { utcDayKey } from "@/lib/gcoins";
 
 const lessonsSearchSchema = z.object({
   tab: z.enum(["materials", "reviewers"]).optional().catch(undefined),
@@ -50,6 +51,7 @@ interface Reviewer {
 
 function LessonsPage() {
   const { user } = useAuth();
+  const { earn } = useGcoins();
   const { markRead } = useUnreadBadges();
   const navigate = Route.useNavigate();
   const { tab: tabFromSearch } = Route.useSearch();
@@ -58,6 +60,7 @@ function LessonsPage() {
   const [reviewers, setReviewers] = useState<Reviewer[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
 
   useEffect(() => {
     void markRead("lessons");
@@ -126,11 +129,16 @@ function LessonsPage() {
   });
 
   async function onDownload(l: Lesson) {
+    if (!l.file_url) {
+      toast.error("No file available for this lesson");
+      return;
+    }
     setDownloadingId(l.id);
     try {
       await downloadFile(l.file_url, downloadName(l));
-      awardGcoins("download_lesson", `download_lesson:${l.id}`);
       toast.success("Download started");
+      // Award after a successful download; explain cap/claim results
+      await earn("download_lesson", `download_lesson:${l.id}:${utcDayKey()}`, { explainZero: true });
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Download failed");
     } finally {
@@ -138,8 +146,32 @@ function LessonsPage() {
     }
   }
 
-  function onViewLesson(l: Lesson) {
-    awardGcoins("view_lesson", `view_lesson:${l.id}:${utcDayKey()}`);
+  async function onViewLesson(l: Lesson) {
+    if (viewingId) return;
+    if (!l.file_url) {
+      toast.error("No file available for this lesson");
+      return;
+    }
+    setViewingId(l.id);
+    // Open inside the click gesture first — awaiting earn() before window.open
+    // lets browsers treat it as a popup and block it (looks like "nothing happens").
+    const win = window.open(l.file_url, "_blank", "noopener,noreferrer");
+    try {
+      await earn("view_lesson", `view_lesson:${l.id}:${utcDayKey()}`, { explainZero: true });
+      if (!win) {
+        toast.message("Pop-up blocked", {
+          description: "Allow pop-ups for this site to open lessons. GCoins still apply if eligible.",
+          action: {
+            label: "Open lesson",
+            onClick: () => {
+              window.open(l.file_url, "_blank", "noopener,noreferrer");
+            },
+          },
+        });
+      }
+    } finally {
+      setViewingId(null);
+    }
   }
 
   const lessonTitle = (id: string | null) => lessons.find((l) => l.id === id)?.title;
@@ -196,15 +228,15 @@ function LessonsPage() {
                 </div>
               </div>
               <div className="flex gap-2 mt-3">
-                <a
-                  href={l.file_url}
-                  target="_blank"
-                  rel="noopener"
-                  onClick={() => onViewLesson(l)}
-                  className="flex-1 py-2 rounded-xl bg-muted hover:bg-secondary flex items-center justify-center gap-1.5 text-xs font-semibold"
+                <button
+                  type="button"
+                  disabled={viewingId === l.id}
+                  onClick={() => void onViewLesson(l)}
+                  className="flex-1 py-2 rounded-xl bg-muted hover:bg-secondary flex items-center justify-center gap-1.5 text-xs font-semibold disabled:opacity-50"
                 >
-                  <Eye className="h-3.5 w-3.5" /> Read
-                </a>
+                  <Eye className="h-3.5 w-3.5" />
+                  {viewingId === l.id ? "Opening…" : "Read"}
+                </button>
                 <button
                   type="button"
                   disabled={downloadingId === l.id}

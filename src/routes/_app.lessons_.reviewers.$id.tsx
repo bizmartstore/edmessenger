@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { ArrowLeft, CheckCircle2, Lightbulb, RotateCcw, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import { awardGcoins } from "@/lib/gcoins";
+import { useGcoins } from "@/hooks/useGcoins";
 
 export const Route = createFileRoute("/_app/lessons_/reviewers/$id")({
   component: TakeReviewer,
@@ -28,6 +28,7 @@ interface Q {
 function TakeReviewer() {
   const { id } = Route.useParams();
   const { user } = useAuth();
+  const { earn } = useGcoins();
   const [reviewer, setReviewer] = useState<Reviewer | null>(null);
   const [questions, setQuestions] = useState<Q[]>([]);
   const [answers, setAnswers] = useState<Record<string, number>>({});
@@ -85,7 +86,7 @@ function TakeReviewer() {
       return;
     }
     setFinished(true);
-    awardGcoins("complete_reviewer", `complete_reviewer:${id}`);
+    void earn("complete_reviewer", `complete_reviewer:${id}`);
     toast.success(`You scored ${score}/${questions.length}`);
   }
 

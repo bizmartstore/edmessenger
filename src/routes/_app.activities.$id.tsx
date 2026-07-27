@@ -8,7 +8,7 @@ import { AttachmentList } from "@/components/AttachmentList";
 import { toast } from "sonner";
 import { notifyRole } from "@/lib/push";
 import { format } from "date-fns";
-import { awardGcoins } from "@/lib/gcoins";
+import { useGcoins } from "@/hooks/useGcoins";
 
 export const Route = createFileRoute("/_app/activities/$id")({
   component: ActivityDetail,
@@ -31,6 +31,7 @@ interface Submission {
 function ActivityDetail() {
   const { id } = Route.useParams();
   const { user, profile } = useAuth();
+  const { earn } = useGcoins();
   const [activity, setActivity] = useState<Activity | null>(null);
   const [sub, setSub] = useState<Submission | null>(null);
   const [note, setNote] = useState("");
@@ -88,7 +89,7 @@ function ActivityDetail() {
       setSub(data as Submission);
       const name = profile?.full_name ?? "A student";
       notifyRole("admin", "Activity submitted", `${name} submitted ${activity?.title ?? "an activity"}`, "/admin/activities");
-      awardGcoins("complete_activity", `complete_activity:${id}`);
+      void earn("complete_activity", `complete_activity:${id}`);
       toast.success("Submitted");
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Submit failed");

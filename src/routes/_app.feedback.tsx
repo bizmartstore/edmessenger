@@ -20,7 +20,7 @@ import { useLiveReload } from "@/hooks/useLiveReload";
 import { formatDistanceToNow } from "date-fns";
 import { feedbackStatusMeta, type FeedbackStatus } from "@/lib/feedback-status";
 import { cn } from "@/lib/utils";
-import { awardGcoins } from "@/lib/gcoins";
+import { useGcoins } from "@/hooks/useGcoins";
 
 export const Route = createFileRoute("/_app/feedback")({
   component: FeedbackPage,
@@ -70,6 +70,7 @@ function FeedbackStatusBadge({ status }: { status: string }) {
 
 function FeedbackPage() {
   const { user, profile } = useAuth();
+  const { earn } = useGcoins();
   const [category, setCategory] = useState<Category>("feature");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -119,7 +120,7 @@ function FeedbackPage() {
         `${name}: ${title.trim()}`,
         "/admin/feedback",
       );
-      awardGcoins("feedback");
+      void earn("feedback");
       setTitle("");
       setBody("");
       setCategory("feature");

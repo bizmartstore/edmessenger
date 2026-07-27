@@ -37,7 +37,6 @@ import { GROUP_ICEBREAKERS, GROUP_REACTIONS } from "@/lib/social";
 import { GroupQuizzesPanel } from "@/components/GroupQuizzesPanel";
 import { ReactionViewersDialog } from "@/components/ReactionViewers";
 import { useGcoins } from "@/hooks/useGcoins";
-import { awardGcoins } from "@/lib/gcoins";
 import { bubbleClasses, chatBackgroundStyle } from "@/lib/store-catalog";
 
 export const Route = createFileRoute("/_app/group/$groupId")({
@@ -74,7 +73,7 @@ async function resolveProfile(userId: string) {
 function GroupChatPage() {
   const { groupId } = Route.useParams();
   const { user, profile } = useAuth();
-  const { wallet } = useGcoins();
+  const { wallet, earn } = useGcoins();
   const { markRead } = useUnreadBadges();
   const navigate = useNavigate();
   const [info, setInfo] = useState<GroupInfo | null>(null);
@@ -334,7 +333,7 @@ function GroupChatPage() {
       if (ids.length) {
         notifyUsers(ids, `${info?.name ?? "Group"} · ${profile?.full_name ?? "Someone"}`, preview, `/group/${groupId}`);
       }
-      awardGcoins("group_message");
+      void earn("group_message");
       void fetchUploadQuota("group").then(setQuota);
     }
     void supabase.rpc("prune_group_messages", { p_group: groupId });

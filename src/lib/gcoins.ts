@@ -41,6 +41,18 @@ export interface AwardResult {
   reason?: string;
 }
 
+export const GCOIN_ACTION_LABELS: Record<GcoinAction, string> = {
+  classroom_message: "Classroom message",
+  dm_message: "Private message",
+  group_message: "Group message",
+  wall_post: "Class wall post",
+  feedback: "Sending feedback",
+  complete_activity: "Completing activity",
+  complete_reviewer: "Finishing reviewer",
+  view_lesson: "Reading a lesson",
+  download_lesson: "Downloading a lesson",
+};
+
 const DEFAULT_COSMETICS: CosmeticsState = {
   owned_items: ["bubble_classic"],
   active_bubble: "bubble_classic",
@@ -88,34 +100,22 @@ export async function fetchGcoinWallet(): Promise<GcoinWallet> {
   };
 }
 
-/** Fire-and-forget award. Never throws; ignores missing migration. */
-export function awardGcoins(action: GcoinAction, claimKey?: string | null): void {
-  if (typeof window === "undefined") return;
-  void (async () => {
-    try {
-      const { error } = await supabase.rpc("award_gcoins", {
-        p_action: action,
-        p_claim_key: claimKey ?? null,
-      });
-      if (error && !/award_gcoins|does not exist|schema cache/i.test(error.message)) {
-        console.warn("[gcoins]", error.message);
-      }
-    } catch {
-      /* ignore */
-    }
-  })();
-}
-
 export async function awardGcoinsAsync(
   action: GcoinAction,
   claimKey?: string | null,
-): Promise<AwardResult | null> {
+): Promise<AwardResult> {
   try {
     const { data, error } = await supabase.rpc("award_gcoins", {
       p_action: action,
       p_claim_key: claimKey ?? null,
     });
-    if (error) return null;
+    if (error) {
+      const msg = error.message || "award failed";
+      if (/award_gcoins|does not exist|schema cache/i.test(msg)) {
+        return { ok: false, awarded: 0, balance: 0, reason: "not_migrated" };
+      }
+      return { ok: false, awarded: 0, balance: 0, reason: msg };
+    }
     const raw = (data ?? {}) as Record<string, unknown>;
     return {
       ok: Boolean(raw.ok),
@@ -126,8 +126,14 @@ export async function awardGcoinsAsync(
       reason: raw.reason ? String(raw.reason) : undefined,
     };
   } catch {
-    return null;
+    return { ok: false, awarded: 0, balance: 0, reason: "network" };
   }
+}
+
+/** @deprecated Prefer useGcoins().earn — kept for rare non-React call sites. */
+export function awardGcoins(action: GcoinAction, claimKey?: string | null): void {
+  if (typeof window === "undefined") return;
+  void awardGcoinsAsync(action, claimKey);
 }
 
 export async function purchaseStoreItem(itemId: string): Promise<{

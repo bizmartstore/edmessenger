@@ -40,7 +40,6 @@ import { toast } from "sonner";
 import { ReactionViewersDialog } from "@/components/ReactionViewers";
 import { ChatStorePanel } from "@/components/ChatStorePanel";
 import { useGcoins } from "@/hooks/useGcoins";
-import { awardGcoins } from "@/lib/gcoins";
 import { bubbleClasses, chatBackgroundStyle } from "@/lib/store-catalog";
 
 const chatSearchSchema = z.object({
@@ -109,7 +108,7 @@ async function resolveClassProfile(userId: string): Promise<ClassMsg["profiles"]
 
 function ChatPage() {
   const { user, profile } = useAuth();
-  const { wallet } = useGcoins();
+  const { wallet, earn } = useGcoins();
   const { counts, markRead } = useUnreadBadges();
   const { online } = usePresence();
   const navigate = useNavigate();
@@ -301,7 +300,7 @@ function ChatPage() {
       setMessages([...next]);
       const preview = text.trim() || (attachments.length ? "Sent an attachment" : "New message");
       notifyAllExcept([user.id], profile?.full_name ?? "Classroom", preview, "/chat");
-      awardGcoins("classroom_message");
+      void earn("classroom_message");
     }
     void supabase.rpc("prune_classroom_messages");
   }
