@@ -176,11 +176,15 @@ function ProfilePage() {
               <span className="text-sm font-semibold ml-1 opacity-70">GCoins</span>
             </div>
             <div className="text-[11px] text-amber-900/70 dark:text-amber-100/60 mt-0.5">
-              Today {wallet.daily_earned}/{wallet.daily_cap} earned · spend in Chat → Store
+              Today {wallet.daily_earned}/{wallet.daily_cap} earned
+            </div>
+            <div className="text-[10px] text-amber-900/60 dark:text-amber-100/50 mt-1 leading-snug">
+              Earn by chatting, wall posts, lessons, reviewers, activities &amp; feedback (daily cap applies).
             </div>
           </div>
           <Link
             to="/chat"
+            search={{ tab: "store" }}
             className="shrink-0 px-3 py-2 rounded-xl bg-amber-500 text-white text-xs font-bold shadow-soft"
           >
             Store

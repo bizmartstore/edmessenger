@@ -92,30 +92,100 @@ export const BUBBLE_STYLES: Record<
 };
 
 export const BACKGROUND_STYLES: Record<string, string> = {
-  bg_dots:
-    "radial-gradient(circle at 1px 1px, rgba(0,0,0,0.08) 1px, transparent 0) 0 0 / 16px 16px, hsl(var(--background))",
-  bg_grid:
-    "linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px), hsl(var(--background))",
-  bg_waves:
-    "repeating-linear-gradient(135deg, rgba(56,189,248,0.08) 0 12px, transparent 12px 24px), hsl(var(--background))",
-  bg_stars:
-    "radial-gradient(1.5px 1.5px at 20% 30%, rgba(99,102,241,0.45), transparent), radial-gradient(1.5px 1.5px at 70% 60%, rgba(14,165,233,0.4), transparent), radial-gradient(1px 1px at 40% 80%, rgba(168,85,247,0.35), transparent), hsl(var(--background))",
-  bg_leaves:
-    "radial-gradient(ellipse at 10% 20%, rgba(34,197,94,0.12), transparent 45%), radial-gradient(ellipse at 90% 80%, rgba(16,185,129,0.1), transparent 40%), hsl(var(--background))",
-  bg_paper:
-    "linear-gradient(180deg, rgba(251,191,36,0.06), transparent 40%), hsl(var(--background))",
-  bg_sunset_sky:
-    "linear-gradient(180deg, rgba(251,146,60,0.18), rgba(244,114,182,0.12) 45%, hsl(var(--background)) 100%)",
-  bg_soft_mesh:
-    "radial-gradient(at 20% 20%, rgba(125,211,252,0.25), transparent 50%), radial-gradient(at 80% 0%, rgba(196,181,253,0.22), transparent 45%), radial-gradient(at 50% 100%, rgba(253,186,116,0.18), transparent 50%), hsl(var(--background))",
-  bg_confetti:
-    "radial-gradient(circle at 15% 20%, rgba(244,63,94,0.18) 0 4px, transparent 5px), radial-gradient(circle at 70% 30%, rgba(59,130,246,0.16) 0 3px, transparent 4px), radial-gradient(circle at 40% 75%, rgba(234,179,8,0.18) 0 3px, transparent 4px), radial-gradient(circle at 85% 70%, rgba(16,185,129,0.15) 0 4px, transparent 5px), hsl(var(--background))",
-  bg_chalkboard:
-    "linear-gradient(180deg, rgba(22,101,52,0.12), transparent 35%), repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(22,101,52,0.06) 28px), hsl(var(--background))",
-  bg_ocean_depth:
-    "linear-gradient(180deg, rgba(12,74,110,0.22), rgba(14,116,144,0.12) 40%, hsl(var(--background)) 100%)",
-  bg_sakura:
-    "radial-gradient(ellipse at 20% 10%, rgba(251,113,133,0.18), transparent 40%), radial-gradient(ellipse at 80% 90%, rgba(244,114,182,0.12), transparent 45%), hsl(var(--background))",
+  // Kept for catalog metadata; rendering uses BACKGROUND_PRESETS via chatBackgroundStyle().
+  bg_dots: "dot paper",
+  bg_grid: "notebook grid",
+  bg_waves: "diagonal waves",
+  bg_stars: "starfield",
+  bg_leaves: "green leaves",
+  bg_paper: "warm paper",
+  bg_sunset_sky: "sunset sky",
+  bg_soft_mesh: "soft mesh",
+  bg_confetti: "confetti",
+  bg_chalkboard: "chalkboard",
+  bg_ocean_depth: "ocean depth",
+  bg_sakura: "sakura",
+};
+
+/** Visible, correctly layered presets (color + image + size). */
+export type BgPreset = {
+  backgroundColor: string;
+  backgroundImage: string;
+  backgroundSize?: string;
+  backgroundPosition?: string;
+  backgroundRepeat?: string;
+};
+
+export const BACKGROUND_PRESETS: Record<string, BgPreset> = {
+  bg_dots: {
+    backgroundColor: "#e2e8f0",
+    backgroundImage: "radial-gradient(circle, #475569 1.5px, transparent 1.6px)",
+    backgroundSize: "12px 12px",
+    backgroundPosition: "0 0",
+  },
+  bg_grid: {
+    backgroundColor: "#f8fafc",
+    backgroundImage:
+      "linear-gradient(#94a3b8 1px, transparent 1px), linear-gradient(90deg, #94a3b8 1px, transparent 1px)",
+    backgroundSize: "18px 18px, 18px 18px",
+  },
+  bg_waves: {
+    backgroundColor: "#e0f2fe",
+    backgroundImage: "repeating-linear-gradient(135deg, #38bdf8 0 10px, transparent 10px 22px)",
+    backgroundSize: "auto",
+  },
+  bg_stars: {
+    backgroundColor: "#0f172a",
+    backgroundImage:
+      "radial-gradient(1.5px 1.5px at 12% 22%, #a5b4fc, transparent), radial-gradient(1.5px 1.5px at 68% 38%, #38bdf8, transparent), radial-gradient(1.2px 1.2px at 42% 72%, #e879f9, transparent), radial-gradient(1px 1px at 88% 18%, #fde68a, transparent), radial-gradient(1.2px 1.2px at 28% 88%, #67e8f9, transparent)",
+    backgroundSize: "100% 100%",
+  },
+  bg_leaves: {
+    backgroundColor: "#ecfdf5",
+    backgroundImage:
+      "radial-gradient(ellipse at 12% 18%, rgba(34,197,94,0.45), transparent 42%), radial-gradient(ellipse at 88% 78%, rgba(16,185,129,0.38), transparent 40%), radial-gradient(ellipse at 55% 40%, rgba(132,204,22,0.22), transparent 35%)",
+    backgroundSize: "100% 100%",
+  },
+  bg_paper: {
+    backgroundColor: "#fef3c7",
+    backgroundImage:
+      "linear-gradient(180deg, rgba(251,191,36,0.35), transparent 50%), repeating-linear-gradient(0deg, transparent, transparent 23px, rgba(180,83,9,0.12) 24px)",
+    backgroundSize: "auto, 100% 24px",
+  },
+  bg_sunset_sky: {
+    backgroundColor: "#fff7ed",
+    backgroundImage: "linear-gradient(180deg, #fb923c 0%, #f472b6 42%, #fdba74 70%, #ffedd5 100%)",
+    backgroundSize: "100% 100%",
+  },
+  bg_soft_mesh: {
+    backgroundColor: "#f1f5f9",
+    backgroundImage:
+      "radial-gradient(at 18% 22%, rgba(56,189,248,0.55), transparent 50%), radial-gradient(at 82% 8%, rgba(167,139,250,0.5), transparent 45%), radial-gradient(at 50% 95%, rgba(251,146,60,0.45), transparent 50%)",
+    backgroundSize: "100% 100%",
+  },
+  bg_confetti: {
+    backgroundColor: "#fdf4ff",
+    backgroundImage:
+      "radial-gradient(circle at 12% 18%, #f43f5e 0 3px, transparent 4px), radial-gradient(circle at 72% 28%, #3b82f6 0 3px, transparent 4px), radial-gradient(circle at 38% 70%, #eab308 0 3px, transparent 4px), radial-gradient(circle at 86% 68%, #10b981 0 3.5px, transparent 4.5px), radial-gradient(circle at 52% 42%, #a855f7 0 2.5px, transparent 3.5px), radial-gradient(circle at 22% 88%, #f97316 0 3px, transparent 4px)",
+    backgroundSize: "100% 100%",
+  },
+  bg_chalkboard: {
+    backgroundColor: "#14532d",
+    backgroundImage:
+      "linear-gradient(180deg, rgba(255,255,255,0.06), transparent 40%), repeating-linear-gradient(0deg, transparent, transparent 26px, rgba(255,255,255,0.12) 27px)",
+    backgroundSize: "auto, 100% 27px",
+  },
+  bg_ocean_depth: {
+    backgroundColor: "#0c4a6e",
+    backgroundImage: "linear-gradient(180deg, #0369a1 0%, #0e7490 35%, #155e75 70%, #082f49 100%)",
+    backgroundSize: "100% 100%",
+  },
+  bg_sakura: {
+    backgroundColor: "#fff1f2",
+    backgroundImage:
+      "radial-gradient(ellipse at 18% 12%, rgba(251,113,133,0.55), transparent 42%), radial-gradient(ellipse at 82% 88%, rgba(244,114,182,0.4), transparent 45%), radial-gradient(circle at 48% 48%, rgba(253,164,175,0.3), transparent 40%)",
+    backgroundSize: "100% 100%",
+  },
 };
 
 export const STORE_ITEMS: StoreItem[] = [
@@ -366,10 +436,11 @@ export function bubbleClasses(bubbleId: string | null | undefined, mine: boolean
 }
 
 export type BgStyle = {
-  background?: string;
+  backgroundColor?: string;
   backgroundImage?: string;
   backgroundSize?: string;
   backgroundPosition?: string;
+  backgroundRepeat?: string;
   backgroundAttachment?: string;
 };
 
@@ -377,19 +448,21 @@ export function chatBackgroundStyle(value: string | null | undefined): BgStyle |
   if (!value) return undefined;
   if (value.startsWith("http://") || value.startsWith("https://")) {
     return {
-      backgroundImage: `linear-gradient(rgba(255,255,255,0.75), rgba(248,250,252,0.88)), url("${value}")`,
+      backgroundColor: "#f8fafc",
+      backgroundImage: `linear-gradient(rgba(255,255,255,0.55), rgba(248,250,252,0.72)), url("${value}")`,
       backgroundSize: "cover",
       backgroundPosition: "center",
+      backgroundRepeat: "no-repeat",
       backgroundAttachment: "local",
     };
   }
-  const preset = BACKGROUND_STYLES[value];
+  const preset = BACKGROUND_PRESETS[value];
   if (!preset) return undefined;
-  if (value === "bg_grid") {
-    return { backgroundImage: preset, backgroundSize: "20px 20px, 20px 20px, auto" };
-  }
-  if (value === "bg_dots") {
-    return { backgroundImage: preset };
-  }
-  return { background: preset };
+  return {
+    backgroundColor: preset.backgroundColor,
+    backgroundImage: preset.backgroundImage,
+    backgroundSize: preset.backgroundSize ?? "auto",
+    backgroundPosition: preset.backgroundPosition ?? "0 0",
+    backgroundRepeat: preset.backgroundRepeat ?? "repeat",
+  };
 }

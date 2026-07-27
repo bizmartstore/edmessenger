@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { MessageComposer, type ReplyTarget } from "@/components/MessageComposer";
@@ -42,7 +43,12 @@ import { useGcoins } from "@/hooks/useGcoins";
 import { awardGcoins } from "@/lib/gcoins";
 import { bubbleClasses, chatBackgroundStyle } from "@/lib/store-catalog";
 
+const chatSearchSchema = z.object({
+  tab: z.enum(["class", "dms", "groups", "store"]).optional().catch(undefined),
+});
+
 export const Route = createFileRoute("/_app/chat")({
+  validateSearch: chatSearchSchema,
   component: ChatPage,
 });
 
@@ -107,7 +113,21 @@ function ChatPage() {
   const { counts, markRead } = useUnreadBadges();
   const { online } = usePresence();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"class" | "dms" | "groups" | "store">("class");
+  const search = Route.useSearch();
+  const [tab, setTab] = useState<"class" | "dms" | "groups" | "store">(search.tab ?? "class");
+
+  useEffect(() => {
+    if (search.tab) setTab(search.tab);
+  }, [search.tab]);
+
+  function selectTab(next: "class" | "dms" | "groups" | "store") {
+    setTab(next);
+    void navigate({
+      to: "/chat",
+      search: next === "class" ? {} : { tab: next },
+      replace: true,
+    });
+  }
   const [messages, setMessages] = useState<ClassMsg[]>(() => getClassroomCache());
   const [loading, setLoading] = useState(() => getClassroomCache().length === 0);
   const [dms, setDms] = useState<DMPreview[]>([]);
@@ -387,7 +407,7 @@ function ChatPage() {
     <div className="max-w-md mx-auto px-3 pt-4 pb-4 flex flex-col h-[calc(100dvh-7rem)] md:max-w-none md:w-full md:px-0 md:h-[calc(100dvh-1.5rem)]">
       <div className="flex items-center gap-1 mb-3">
         <button
-          onClick={() => setTab("class")}
+          onClick={() => selectTab("class")}
           className={`${tabBtn} ${tab === "class" ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground"}`}
         >
           <Users className="h-3.5 w-3.5 shrink-0" />
@@ -395,7 +415,7 @@ function ChatPage() {
           {tab !== "class" && <UnreadBadge count={counts.classroom} className="top-0.5 right-1" />}
         </button>
         <button
-          onClick={() => setTab("dms")}
+          onClick={() => selectTab("dms")}
           className={`${tabBtn} ${tab === "dms" ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground"}`}
         >
           <MessagesSquare className="h-3.5 w-3.5 shrink-0" />
@@ -403,7 +423,7 @@ function ChatPage() {
           {tab !== "dms" && <UnreadBadge count={counts.dms} className="top-0.5 right-1" />}
         </button>
         <button
-          onClick={() => setTab("groups")}
+          onClick={() => selectTab("groups")}
           className={`${tabBtn} ${tab === "groups" ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground"}`}
         >
           <UsersRound className="h-3.5 w-3.5 shrink-0" />
@@ -411,7 +431,7 @@ function ChatPage() {
           {tab !== "groups" && <UnreadBadge count={counts.groups} className="top-0.5 right-1" />}
         </button>
         <button
-          onClick={() => setTab("store")}
+          onClick={() => selectTab("store")}
           className={`${tabBtn} ${tab === "store" ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground"}`}
         >
           <Store className="h-3.5 w-3.5 shrink-0" />

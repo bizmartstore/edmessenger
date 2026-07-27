@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import { GameHubModal } from "@/components/games/GameHubModal";
+import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 type GamesCtx = {
   open: boolean;
@@ -9,18 +9,21 @@ type GamesCtx = {
 
 const Ctx = createContext<GamesCtx | null>(null);
 
+/** Navigates to the full-page Games tab (same pattern as Feedback). */
 export function GamesProvider({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const openGames = useCallback(() => setOpen(true), []);
-  const closeGames = useCallback(() => setOpen(false), []);
-  const value = useMemo(() => ({ open, openGames, closeGames }), [open, openGames, closeGames]);
-
-  return (
-    <Ctx.Provider value={value}>
-      {children}
-      <GameHubModal open={open} onOpenChange={setOpen} />
-    </Ctx.Provider>
+  const navigate = useNavigate();
+  const openGames = useCallback(() => {
+    void navigate({ to: "/games" });
+  }, [navigate]);
+  const closeGames = useCallback(() => {
+    void navigate({ to: "/" });
+  }, [navigate]);
+  const value = useMemo(
+    () => ({ open: false, openGames, closeGames }),
+    [openGames, closeGames],
   );
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
 export function useGames() {

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Coins, ImagePlus, Check, ShoppingBag } from "lucide-react";
+import { Coins, ImagePlus, Check, ShoppingBag, HelpCircle, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useGcoins } from "@/hooks/useGcoins";
@@ -15,12 +15,23 @@ import { cn } from "@/lib/utils";
 
 type ShopTab = "bubbles" | "backgrounds" | "apply";
 
+const EARN_TIPS: { action: string; coins: string; tip: string }[] = [
+  { action: "Classroom / Private / Group message", coins: "+1", tip: "Up to 5 each per day" },
+  { action: "Post on Class Wall", coins: "+2", tip: "Up to 3 posts per day" },
+  { action: "Send app feedback", coins: "+5", tip: "Up to 3 per day" },
+  { action: "Complete an activity", coins: "+8", tip: "Up to 5 per day" },
+  { action: "Finish a lesson reviewer", coins: "+10", tip: "Up to 5 per day" },
+  { action: "Read / view a lesson", coins: "+2", tip: "Up to 8 per day" },
+  { action: "Download a lesson", coins: "+3", tip: "Up to 5 per day" },
+];
+
 export function ChatStorePanel() {
   const { user } = useAuth();
   const { wallet, refresh, setBalance, setCosmetics } = useGcoins();
   const [shop, setShop] = useState<ShopTab>("bubbles");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [applySurface, setApplySurface] = useState<ChatSurface>("classroom");
+  const [earnOpen, setEarnOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const owned = new Set(wallet.cosmetics.owned_items);
@@ -133,6 +144,36 @@ export function ChatStorePanel() {
           </div>
           <ShoppingBag className="h-4 w-4 text-muted-foreground" />
         </div>
+
+        <button
+          type="button"
+          onClick={() => setEarnOpen((v) => !v)}
+          className="mt-3 flex w-full items-center gap-2 rounded-xl border border-amber-400/30 bg-amber-50/80 px-3 py-2 text-left dark:bg-amber-950/30"
+        >
+          <HelpCircle className="h-4 w-4 shrink-0 text-amber-600" />
+          <span className="min-w-0 flex-1 text-xs font-semibold text-amber-950 dark:text-amber-100">
+            How to earn GCoins
+          </span>
+          <ChevronDown className={cn("h-4 w-4 text-amber-700 transition-transform", earnOpen && "rotate-180")} />
+        </button>
+        {earnOpen && (
+          <div className="mt-2 space-y-1.5 rounded-xl border border-border bg-muted/40 p-2.5">
+            <p className="text-[10px] text-muted-foreground px-0.5">
+              Daily max is {wallet.daily_cap} GCoins. Caps reset each UTC day — study & chat to earn more.
+            </p>
+            {EARN_TIPS.map((t) => (
+              <div key={t.action} className="flex items-start gap-2 rounded-lg bg-card px-2.5 py-1.5 border border-border/60">
+                <span className="shrink-0 rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 tabular-nums">
+                  {t.coins}
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold leading-tight">{t.action}</div>
+                  <div className="text-[10px] text-muted-foreground">{t.tip}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mb-3 flex gap-1 rounded-2xl bg-muted p-1">
@@ -205,16 +246,17 @@ export function ChatStorePanel() {
         {shop === "backgrounds" &&
           backgrounds.map((item) => {
             const isOwned = owned.has(item.id);
+            const previewStyle =
+              item.kind === "pack"
+                ? { backgroundImage: "linear-gradient(135deg,#fbbf24,#f472b6,#38bdf8)", backgroundSize: "cover" }
+                : chatBackgroundStyle(item.id);
             return (
               <div key={item.id} className="rounded-2xl border border-border bg-card p-3 shadow-soft">
                 <div className="flex gap-3">
                   <div
-                    className="h-16 w-20 shrink-0 rounded-xl border border-border"
-                    style={
-                      item.kind === "pack"
-                        ? { background: "linear-gradient(135deg,#fbbf24,#f472b6)" }
-                        : chatBackgroundStyle(item.id)
-                    }
+                    className="h-20 w-24 shrink-0 overflow-hidden rounded-xl border border-border shadow-inner"
+                    style={previewStyle}
+                    title={`${item.name} sample`}
                   />
                   <div className="min-w-0 flex-1">
                     <div className="font-semibold text-sm">{item.name}</div>
@@ -282,7 +324,7 @@ export function ChatStorePanel() {
                   onClick={() => void applyBg(item.id)}
                   className="overflow-hidden rounded-2xl border border-border text-left"
                 >
-                  <div className="h-14 w-full" style={chatBackgroundStyle(item.id)} />
+                  <div className="h-16 w-full" style={chatBackgroundStyle(item.id)} />
                   <div className="px-2 py-1.5 text-[10px] font-semibold">{item.name}</div>
                 </button>
               ))}
