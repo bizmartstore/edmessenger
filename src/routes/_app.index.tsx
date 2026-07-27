@@ -13,6 +13,7 @@ import {
   FolderKanban,
   Lightbulb,
   Gamepad2,
+  ShoppingBag,
   type LucideProps,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -186,6 +187,14 @@ function Home() {
       label: "Games",
       color: "from-indigo-500 to-cyan-500",
       onClick: openGames,
+    },
+    {
+      kind: "action",
+      id: "store",
+      icon: ShoppingBag,
+      label: "Store",
+      color: "from-amber-500 to-yellow-400",
+      onClick: () => void navigate({ to: "/chat", search: { tab: "store" } }),
     },
   ];
 
