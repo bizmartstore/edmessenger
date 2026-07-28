@@ -41,6 +41,7 @@ import { ReactionViewersDialog } from "@/components/ReactionViewers";
 import { ChatStorePanel } from "@/components/ChatStorePanel";
 import { useGcoins } from "@/hooks/useGcoins";
 import { bubbleClasses, chatBackgroundStyle } from "@/lib/store-catalog";
+import { getFirstName } from "@/lib/profile-name";
 
 const chatSearchSchema = z.object({
   tab: z.enum(["class", "dms", "groups", "store"]).optional().catch(undefined),
@@ -613,7 +614,7 @@ function ChatPage() {
                       )}
                       <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-500 border-2 border-card" />
                     </div>
-                    <span className="text-[10px] font-medium truncate w-full text-center">{(u.full_name ?? "Student").split(" ")[0]}</span>
+                    <span className="text-[10px] font-medium truncate w-full text-center">{getFirstName(u) || "Student"}</span>
                   </Link>
                 ))}
               </div>

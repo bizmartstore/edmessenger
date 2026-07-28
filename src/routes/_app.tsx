@@ -8,6 +8,7 @@ import { UnreadBadgesProvider } from "@/hooks/useUnreadBadges";
 import { PresenceProvider } from "@/hooks/usePresence";
 import { GamesProvider } from "@/hooks/useGames";
 import { GcoinProvider } from "@/hooks/useGcoins";
+import { AcademicProvider } from "@/hooks/useAcademicModal";
 
 export const Route = createFileRoute("/_app")({
   ssr: false,
@@ -34,19 +35,21 @@ function AppLayout() {
     <UnreadBadgesProvider>
       <PresenceProvider>
         <GamesProvider>
-          <GcoinProvider>
-            {/* Mobile: stacked column + bottom nav. Desktop (md+): sidebar + full-width main. */}
-            <div className="min-h-screen flex flex-col md:flex-row safe-top">
-              <DesktopSidebar />
-              <div className="min-h-screen flex-1 flex flex-col min-w-0">
-                <main className="flex-1 pb-24 md:pb-6 animate-fade-up md:px-8 md:pt-2">
-                  <Outlet />
-                </main>
-                <BottomNav />
-                <PwaInstallPrompt />
+          <AcademicProvider>
+            <GcoinProvider>
+              {/* Mobile: stacked column + bottom nav. Desktop (md+): sidebar + full-width main. */}
+              <div className="min-h-screen flex flex-col md:flex-row safe-top">
+                <DesktopSidebar />
+                <div className="min-h-screen flex-1 flex flex-col min-w-0">
+                  <main className="flex-1 pb-24 md:pb-6 animate-fade-up md:px-8 md:pt-2">
+                    <Outlet />
+                  </main>
+                  <BottomNav />
+                  <PwaInstallPrompt />
+                </div>
               </div>
-            </div>
-          </GcoinProvider>
+            </GcoinProvider>
+          </AcademicProvider>
         </GamesProvider>
       </PresenceProvider>
     </UnreadBadgesProvider>

@@ -14,6 +14,7 @@ import {
   Lightbulb,
   Gamepad2,
   ShoppingBag,
+  BookOpenCheck,
   type LucideProps,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -23,6 +24,8 @@ import { UnreadBadge, useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { useLiveReload } from "@/hooks/useLiveReload";
 import { useAutoHorizontalScroll } from "@/hooks/useAutoHorizontalScroll";
 import { useGames } from "@/hooks/useGames";
+import { useAcademicModal } from "@/hooks/useAcademicModal";
+import { getFirstName } from "@/lib/profile-name";
 
 type HomeTile =
   | {
@@ -104,6 +107,7 @@ function Home() {
   const { profile, signOut, canToggleAdmin, viewMode, setViewMode, isAdmin, actingAsAdmin } = useAuth();
   const { counts, markRead } = useUnreadBadges();
   const { openGames } = useGames();
+  const { openAcademic } = useAcademicModal();
   const navigate = useNavigate();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
@@ -137,7 +141,7 @@ function Home() {
     return () => window.clearTimeout(t);
   }, [markRead]);
 
-  const first = (profile?.full_name ?? "").split(" ")[0] || "friend";
+  const first = getFirstName(profile ?? {}) || "friend";
 
   const tiles: HomeTile[] = [
     {
@@ -179,6 +183,14 @@ function Home() {
       label: "Feedback",
       color: "from-rose-400 to-pink-600",
       badge: 0,
+    },
+    {
+      kind: "action",
+      id: "academic",
+      icon: BookOpenCheck,
+      label: "Academic",
+      color: "from-indigo-500 to-cyan-500",
+      onClick: openAcademic,
     },
     {
       kind: "action",

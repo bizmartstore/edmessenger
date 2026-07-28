@@ -1,10 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { uploadToBucket, humanSize } from "@/lib/upload";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
-import { Camera, Pencil, Save, X } from "lucide-react";
+import { Camera, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { buildFullName, getInitials, getProfileDisplayName, splitStoredName } from "@/lib/profile-name";
+import { parseScore, TERM_OPTIONS, type AcademicPerformanceScore, type AcademicQuizScore, type AcademicTab, type AcademicTermGrade } from "@/lib/academic";
 
 export const Route = createFileRoute("/admin/students")({
   component: AdminStudents,
@@ -13,6 +16,9 @@ export const Route = createFileRoute("/admin/students")({
 interface Row {
   id: string;
   full_name: string | null;
+  last_name: string | null;
+  first_name: string | null;
+  middle_name: string | null;
   email: string | null;
   avatar_url: string | null;
   school: string | null;
@@ -23,11 +29,18 @@ interface Row {
 function AdminStudents() {
   const [students, setStudents] = useState<Row[]>([]);
   const [editing, setEditing] = useState<Row | null>(null);
-  const [fullName, setFullName] = useState("");
+  const [query, setQuery] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [middleName, setMiddleName] = useState("");
   const [school, setSchool] = useState("");
   const [contact, setContact] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [activeTab, setActiveTab] = useState<AcademicTab | "profile">("profile");
+  const [quizScores, setQuizScores] = useState<AcademicQuizScore[]>([]);
+  const [performanceScores, setPerformanceScores] = useState<AcademicPerformanceScore[]>([]);
+  const [termGrades, setTermGrades] = useState<AcademicTermGrade[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -40,11 +53,40 @@ function AdminStudents() {
   }, []);
 
   function openEdit(s: Row) {
+    const parsed = splitStoredName(s.full_name);
     setEditing(s);
-    setFullName((s.full_name ?? "").toUpperCase());
+    setActiveTab("profile");
+    setLastName((s.last_name ?? parsed.lastName ?? "").toUpperCase());
+    setFirstName((s.first_name ?? parsed.firstName ?? "").toUpperCase());
+    setMiddleName((s.middle_name ?? parsed.middleName ?? "").toUpperCase());
     setSchool((s.school ?? "").toUpperCase());
     setContact(s.contact_number ?? "");
     setAvatarUrl(s.avatar_url);
+    void loadAcademic(s.id);
+  }
+
+  async function loadAcademic(studentId: string) {
+    const [quizRes, performanceRes, gradesRes] = await Promise.all([
+      supabase
+        .from("academic_quiz_scores")
+        .select("id, title, score, max_score, created_at")
+        .eq("student_id", studentId)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("academic_performance_scores")
+        .select("id, title, score, max_score, created_at")
+        .eq("student_id", studentId)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("academic_term_grades")
+        .select("id, term_no, grade_value")
+        .eq("student_id", studentId)
+        .order("term_no", { ascending: true }),
+    ]);
+
+    setQuizScores((quizRes.data ?? []) as AcademicQuizScore[]);
+    setPerformanceScores((performanceRes.data ?? []) as AcademicPerformanceScore[]);
+    setTermGrades((gradesRes.data ?? []) as AcademicTermGrade[]);
   }
 
   async function onAvatar(file: File | undefined) {
@@ -67,12 +109,22 @@ function AdminStudents() {
 
   async function save() {
     if (!editing) return;
+    const nextLast = lastName.trim().toUpperCase();
+    const nextFirst = firstName.trim().toUpperCase();
+    const nextMiddle = middleName.trim().toUpperCase();
+    if (!nextLast || !nextFirst) {
+      toast.error("Last name and first name are required");
+      return;
+    }
     setBusy(true);
     try {
       const { error } = await supabase
         .from("profiles")
         .update({
-          full_name: fullName.trim().toUpperCase() || null,
+          last_name: nextLast,
+          first_name: nextFirst,
+          middle_name: nextMiddle || null,
+          full_name: buildFullName(nextLast, nextFirst, nextMiddle) || null,
           school: school.trim().toUpperCase() || null,
           contact_number: contact.trim() || null,
           avatar_url: avatarUrl,
@@ -90,23 +142,97 @@ function AdminStudents() {
     }
   }
 
+  async function addAcademicRow(table: "academic_quiz_scores" | "academic_performance_scores") {
+    if (!editing) return;
+    const title = table === "academic_quiz_scores" ? "New Quiz" : "New Performance";
+    const { error } = await supabase.from(table).insert({
+      student_id: editing.id,
+      title,
+      score: 0,
+      max_score: 0,
+    });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    await loadAcademic(editing.id);
+  }
+
+  async function updateAcademicRow(
+    table: "academic_quiz_scores" | "academic_performance_scores",
+    id: string,
+    patch: Record<string, string | number>,
+  ) {
+    const { id: _id, ...payload } = patch;
+    const { error } = await supabase.from(table).update(payload).eq("id", id);
+    if (error) toast.error(error.message);
+  }
+
+  async function deleteAcademicRow(table: "academic_quiz_scores" | "academic_performance_scores", id: string) {
+    const { error } = await supabase.from(table).delete().eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    if (editing) await loadAcademic(editing.id);
+  }
+
+  async function saveTermGrade(termNo: 1 | 2 | 3, gradeValue: string) {
+    if (!editing) return;
+    const clean = gradeValue.trim();
+    if (!clean) {
+      const existing = termGrades.find((row) => row.term_no === termNo);
+      if (!existing) return;
+      const { error } = await supabase.from("academic_term_grades").delete().eq("id", existing.id);
+      if (error) toast.error(error.message);
+      else await loadAcademic(editing.id);
+      return;
+    }
+
+    const { error } = await supabase.from("academic_term_grades").upsert(
+      {
+        student_id: editing.id,
+        term_no: termNo,
+        grade_value: clean,
+      },
+      { onConflict: "student_id,term_no" },
+    );
+    if (error) toast.error(error.message);
+    else await loadAcademic(editing.id);
+  }
+
+  const filteredStudents = useMemo(() => {
+    const q = query.trim().toUpperCase();
+    if (!q) return students;
+    return students.filter((student) =>
+      getProfileDisplayName(student).includes(q) ||
+      (student.email ?? "").toUpperCase().includes(q),
+    );
+  }, [query, students]);
+
   return (
     <div>
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search by last name, first name, middle name, or email"
+        className="mb-3 w-full rounded-2xl border border-border bg-muted px-4 py-3 text-sm outline-none focus:border-primary"
+      />
       <div className="text-sm mb-3">
         <span className="font-bold">{students.length}</span> student{students.length === 1 ? "" : "s"} registered
       </div>
       <div className="rounded-2xl bg-card border border-border overflow-hidden">
-        {students.map((s) => (
+        {filteredStudents.map((s) => (
           <div key={s.id} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-b-0">
             {s.avatar_url ? (
               <img src={s.avatar_url} alt="" className="h-10 w-10 rounded-full object-cover" />
             ) : (
               <div className="h-10 w-10 rounded-full gradient-primary grid place-items-center text-primary-foreground font-bold">
-                {(s.full_name ?? "?")[0]?.toUpperCase()}
+                {getInitials(s)}
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <div className="font-semibold text-sm truncate">{s.full_name ?? "Student"}</div>
+              <div className="font-semibold text-sm truncate">{getProfileDisplayName(s) || "Student"}</div>
               <div className="text-xs text-muted-foreground truncate">{s.email}</div>
               {(s.school || s.contact_number) && (
                 <div className="text-[10px] text-muted-foreground truncate">
@@ -131,7 +257,7 @@ function AdminStudents() {
 
       {editing && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-3xl bg-card border border-border shadow-glow p-5 animate-fade-up">
+          <div className="w-full max-w-3xl rounded-3xl bg-card border border-border shadow-glow p-5 animate-fade-up max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-bold">Edit student</h2>
               <button type="button" onClick={() => setEditing(null)} className="p-2 rounded-xl hover:bg-muted">
@@ -145,7 +271,7 @@ function AdminStudents() {
                   <img src={avatarUrl} alt="" className="h-20 w-20 rounded-full object-cover" />
                 ) : (
                   <div className="h-20 w-20 rounded-full gradient-primary grid place-items-center text-2xl font-bold text-primary-foreground">
-                    {(fullName || "?")[0]}
+                    {getInitials({ first_name: firstName, last_name: lastName, full_name: editing.full_name })}
                   </div>
                 )}
                 <span className="absolute bottom-0 right-0 h-7 w-7 rounded-full bg-card border grid place-items-center">
@@ -161,51 +287,223 @@ function AdminStudents() {
               />
             </div>
 
-            <div className="space-y-3">
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Full name</span>
-                <input
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value.toUpperCase())}
-                  className="mt-1 w-full px-3 py-2.5 rounded-xl bg-muted border border-border text-sm uppercase outline-none focus:border-primary"
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AcademicTab | "profile")} className="w-full">
+              <div className="overflow-x-auto pb-2">
+                <TabsList className="inline-flex h-auto min-w-max gap-1 rounded-2xl p-1">
+                  <TabsTrigger value="profile" className="rounded-xl px-3 py-2 text-xs">Profile</TabsTrigger>
+                  <TabsTrigger value="quizzes" className="rounded-xl px-3 py-2 text-xs">Quizzes</TabsTrigger>
+                  <TabsTrigger value="performance" className="rounded-xl px-3 py-2 text-xs">Performance</TabsTrigger>
+                  {TERM_OPTIONS.map((term) => (
+                    <TabsTrigger key={term.value} value={term.value} className="rounded-xl px-3 py-2 text-xs">
+                      {term.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+
+              <TabsContent value="profile" className="space-y-3">
+                <label className="block">
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Last name</span>
+                  <input
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value.toUpperCase())}
+                    className="mt-1 w-full px-3 py-2.5 rounded-xl bg-muted border border-border text-sm uppercase outline-none focus:border-primary"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">First name</span>
+                  <input
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value.toUpperCase())}
+                    className="mt-1 w-full px-3 py-2.5 rounded-xl bg-muted border border-border text-sm uppercase outline-none focus:border-primary"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Middle name (optional)</span>
+                  <input
+                    value={middleName}
+                    onChange={(e) => setMiddleName(e.target.value.toUpperCase())}
+                    className="mt-1 w-full px-3 py-2.5 rounded-xl bg-muted border border-border text-sm uppercase outline-none focus:border-primary"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">School</span>
+                  <input
+                    value={school}
+                    onChange={(e) => setSchool(e.target.value.toUpperCase())}
+                    className="mt-1 w-full px-3 py-2.5 rounded-xl bg-muted border border-border text-sm uppercase outline-none focus:border-primary"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Email</span>
+                  <input
+                    value={editing.email ?? ""}
+                    disabled
+                    className="mt-1 w-full px-3 py-2.5 rounded-xl bg-muted/50 border border-border text-sm text-muted-foreground"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Contact number</span>
+                  <input
+                    value={contact}
+                    onChange={(e) => setContact(e.target.value)}
+                    className="mt-1 w-full px-3 py-2.5 rounded-xl bg-muted border border-border text-sm outline-none focus:border-primary"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void save()}
+                  className="w-full py-3 rounded-2xl gradient-primary text-primary-foreground font-semibold text-sm inline-flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  <Save className="h-4 w-4" /> {busy ? "Saving…" : "Save changes"}
+                </button>
+              </TabsContent>
+
+              <TabsContent value="quizzes">
+                <AcademicRowsEditor
+                  rows={quizScores}
+                  addLabel="Add quiz score"
+                  emptyLabel="No quiz scores yet."
+                  onAdd={() => void addAcademicRow("academic_quiz_scores")}
+                  onChange={(row) => {
+                    setQuizScores((prev) => prev.map((item) => (item.id === row.id ? row : item)));
+                    void updateAcademicRow("academic_quiz_scores", row.id, row);
+                  }}
+                  onDelete={(id) => void deleteAcademicRow("academic_quiz_scores", id)}
                 />
-              </label>
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">School</span>
-                <input
-                  value={school}
-                  onChange={(e) => setSchool(e.target.value.toUpperCase())}
-                  className="mt-1 w-full px-3 py-2.5 rounded-xl bg-muted border border-border text-sm uppercase outline-none focus:border-primary"
+              </TabsContent>
+
+              <TabsContent value="performance">
+                <AcademicRowsEditor
+                  rows={performanceScores}
+                  addLabel="Add performance score"
+                  emptyLabel="No performance scores yet."
+                  onAdd={() => void addAcademicRow("academic_performance_scores")}
+                  onChange={(row) => {
+                    setPerformanceScores((prev) => prev.map((item) => (item.id === row.id ? row : item)));
+                    void updateAcademicRow("academic_performance_scores", row.id, row);
+                  }}
+                  onDelete={(id) => void deleteAcademicRow("academic_performance_scores", id)}
                 />
-              </label>
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Email</span>
-                <input
-                  value={editing.email ?? ""}
-                  disabled
-                  className="mt-1 w-full px-3 py-2.5 rounded-xl bg-muted/50 border border-border text-sm text-muted-foreground"
-                />
-              </label>
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Contact number</span>
-                <input
-                  value={contact}
-                  onChange={(e) => setContact(e.target.value)}
-                  className="mt-1 w-full px-3 py-2.5 rounded-xl bg-muted border border-border text-sm outline-none focus:border-primary"
-                />
-              </label>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void save()}
-                className="w-full py-3 rounded-2xl gradient-primary text-primary-foreground font-semibold text-sm inline-flex items-center justify-center gap-2 disabled:opacity-60"
-              >
-                <Save className="h-4 w-4" /> {busy ? "Saving…" : "Save changes"}
-              </button>
-            </div>
+              </TabsContent>
+
+              {TERM_OPTIONS.map((term, index) => (
+                <TabsContent key={term.value} value={term.value}>
+                  <TermGradeEditor
+                    termLabel={term.label}
+                    currentValue={termGrades.find((row) => row.term_no === index + 1)?.grade_value ?? ""}
+                    onSave={(value) => void saveTermGrade((index + 1) as 1 | 2 | 3, value)}
+                  />
+                </TabsContent>
+              ))}
+            </Tabs>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function AcademicRowsEditor({
+  rows,
+  addLabel,
+  emptyLabel,
+  onAdd,
+  onChange,
+  onDelete,
+}: {
+  rows: { id: string; title: string; score: number; max_score: number }[];
+  addLabel: string;
+  emptyLabel: string;
+  onAdd: () => void;
+  onChange: (row: { id: string; title: string; score: number; max_score: number }) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <button
+        type="button"
+        onClick={onAdd}
+        className="w-full rounded-2xl bg-muted px-4 py-3 text-sm font-semibold inline-flex items-center justify-center gap-2 hover:bg-secondary"
+      >
+        <Plus className="h-4 w-4" /> {addLabel}
+      </button>
+      {rows.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+          {emptyLabel}
+        </div>
+      )}
+      {rows.map((row) => (
+        <div key={row.id} className="rounded-2xl border border-border bg-muted/40 p-4 space-y-3">
+          <input
+            value={row.title}
+            onChange={(e) => onChange({ ...row, title: e.target.value })}
+            onBlur={(e) => onChange({ ...row, title: e.target.value })}
+            placeholder="Title"
+            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <input
+              value={String(row.score)}
+              onChange={(e) => onChange({ ...row, score: parseScore(e.target.value) })}
+              placeholder="Score"
+              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            />
+            <input
+              value={String(row.max_score)}
+              onChange={(e) => onChange({ ...row, max_score: parseScore(e.target.value) })}
+              placeholder="Max score"
+              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+            />
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => onDelete(row.id)}
+              className="rounded-xl p-2 text-destructive hover:bg-destructive/10"
+              title="Delete row"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TermGradeEditor({
+  termLabel,
+  currentValue,
+  onSave,
+}: {
+  termLabel: string;
+  currentValue: string;
+  onSave: (value: string) => void;
+}) {
+  const [value, setValue] = useState(currentValue);
+
+  useEffect(() => {
+    setValue(currentValue);
+  }, [currentValue]);
+
+  return (
+    <div className="rounded-2xl border border-border bg-muted/40 p-4 space-y-3">
+      <div className="text-sm font-semibold">{termLabel} final grade</div>
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="Example: 95 or PASSED"
+        className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+      />
+      <button
+        type="button"
+        onClick={() => onSave(value)}
+        className="w-full rounded-2xl gradient-primary px-4 py-3 text-sm font-semibold text-primary-foreground"
+      >
+        Save {termLabel}
+      </button>
     </div>
   );
 }

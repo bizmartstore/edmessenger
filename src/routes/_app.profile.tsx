@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth, type Profile } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { uploadToBucket, humanSize } from "@/lib/upload";
+import { buildFullName, getInitials, splitStoredName } from "@/lib/profile-name";
 import { toast } from "sonner";
 import { ArrowLeft, Camera, CheckCircle2, ClipboardList, Coins, FolderKanban, Save } from "lucide-react";
 import { NotificationStatusCard } from "@/components/NotificationStatusCard";
@@ -30,7 +31,9 @@ interface ActivityRow {
 function ProfilePage() {
   const { user, profile, refresh } = useAuth();
   const { wallet, loading: gcoinsLoading } = useGcoins();
-  const [fullName, setFullName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [middleName, setMiddleName] = useState("");
   const [school, setSchool] = useState("");
   const [contact, setContact] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -42,7 +45,10 @@ function ProfilePage() {
 
   useEffect(() => {
     if (!profile) return;
-    setFullName((profile.full_name ?? "").toUpperCase());
+    const parsed = splitStoredName(profile.full_name);
+    setLastName((profile.last_name ?? parsed.lastName ?? "").toUpperCase());
+    setFirstName((profile.first_name ?? parsed.firstName ?? "").toUpperCase());
+    setMiddleName((profile.middle_name ?? parsed.middleName ?? "").toUpperCase());
     setSchool(profile.school ?? "");
     setContact(profile.contact_number ?? "");
     setAvatarUrl(profile.avatar_url);
@@ -96,12 +102,22 @@ function ProfilePage() {
 
   async function save() {
     if (!user) return;
+    const nextLast = lastName.trim().toUpperCase();
+    const nextFirst = firstName.trim().toUpperCase();
+    const nextMiddle = middleName.trim().toUpperCase();
+    if (!nextLast || !nextFirst) {
+      toast.error("Last name and first name are required");
+      return;
+    }
     setBusy(true);
     try {
-      const name = fullName.trim().toUpperCase();
+      const name = buildFullName(nextLast, nextFirst, nextMiddle);
       const { error } = await supabase
         .from("profiles")
         .update({
+          last_name: nextLast,
+          first_name: nextFirst,
+          middle_name: nextMiddle || null,
           full_name: name || null,
           school: school.trim() || null,
           contact_number: contact.trim() || null,
@@ -119,6 +135,11 @@ function ProfilePage() {
   }
 
   const display = profile as Profile | null;
+  const initials = getInitials({
+    first_name: firstName,
+    last_name: lastName,
+    full_name: display?.full_name,
+  });
 
   return (
     <div className="max-w-md mx-auto px-5 pt-4 pb-8 md:max-w-3xl md:w-full md:px-0">
@@ -143,7 +164,7 @@ function ProfilePage() {
             <img src={avatarUrl} alt="" className="h-24 w-24 rounded-full object-cover shadow-card ring-2 ring-primary/20" />
           ) : (
             <div className="h-24 w-24 rounded-full gradient-primary grid place-items-center text-3xl font-bold text-primary-foreground shadow-glow">
-              {(fullName || "?")[0]}
+              {initials}
             </div>
           )}
           <span className="absolute bottom-0 right-0 h-8 w-8 rounded-full bg-card border border-border shadow grid place-items-center group-hover:bg-muted">
@@ -194,12 +215,30 @@ function ProfilePage() {
 
       <div className="space-y-3 rounded-2xl bg-card border border-border p-4 shadow-card">
         <label className="block">
-          <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Full name (capital letters)</span>
+          <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Last name</span>
           <input
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value.toUpperCase())}
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value.toUpperCase())}
             className="mt-1 w-full px-3 py-2.5 rounded-xl bg-muted border border-border text-sm uppercase outline-none focus:border-primary"
-            placeholder="YOUR FULL NAME"
+            placeholder="LAST NAME"
+          />
+        </label>
+        <label className="block">
+          <span className="text-[10px] uppercase tracking-widest text-muted-foreground">First name</span>
+          <input
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value.toUpperCase())}
+            className="mt-1 w-full px-3 py-2.5 rounded-xl bg-muted border border-border text-sm uppercase outline-none focus:border-primary"
+            placeholder="FIRST NAME"
+          />
+        </label>
+        <label className="block">
+          <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Middle name (optional)</span>
+          <input
+            value={middleName}
+            onChange={(e) => setMiddleName(e.target.value.toUpperCase())}
+            className="mt-1 w-full px-3 py-2.5 rounded-xl bg-muted border border-border text-sm uppercase outline-none focus:border-primary"
+            placeholder="MIDDLE NAME"
           />
         </label>
         <label className="block">
