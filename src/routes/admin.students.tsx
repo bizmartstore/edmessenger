@@ -45,6 +45,10 @@ function AdminStudents() {
   const [batchBusy, setBatchBusy] = useState(false);
 
   // Batch gradebook state (quick add without opening student modal).
+  const [quizTitles, setQuizTitles] = useState<{ title: string; max_score: number }[]>([]);
+  const [performanceTitles, setPerformanceTitles] = useState<{ title: string; max_score: number }[]>([]);
+  const [quizTitlePick, setQuizTitlePick] = useState("");
+  const [performanceTitlePick, setPerformanceTitlePick] = useState("");
   const [quizBatchTitle, setQuizBatchTitle] = useState("");
   const [quizBatchMaxScore, setQuizBatchMaxScore] = useState("0");
   const [quizBatchScores, setQuizBatchScores] = useState<Record<string, string>>({});
@@ -216,40 +220,161 @@ function AdminStudents() {
     else await loadAcademic(editing.id);
   }
 
+  function getNameParts(s: Row) {
+    const parsed = splitStoredName(s.full_name);
+    return {
+      last: (s.last_name ?? parsed.lastName ?? "").trim().toUpperCase(),
+      first: (s.first_name ?? parsed.firstName ?? "").trim().toUpperCase(),
+      middle: (s.middle_name ?? parsed.middleName ?? "").trim().toUpperCase(),
+    };
+  }
+
+  function sortByLastName(list: Row[]) {
+    return [...list].sort((a, b) => {
+      const A = getNameParts(a);
+      const B = getNameParts(b);
+      return (
+        A.last.localeCompare(B.last, undefined, { sensitivity: "base" }) ||
+        A.first.localeCompare(B.first, undefined, { sensitivity: "base" }) ||
+        A.middle.localeCompare(B.middle, undefined, { sensitivity: "base" })
+      );
+    });
+  }
+
+  function uniqueTitlesFromRows(rows: { title: string; max_score: number | null }[]) {
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      const title = (row.title ?? "").trim();
+      if (!title) continue;
+      if (!map.has(title)) map.set(title, Number(row.max_score ?? 0) || 0);
+    }
+    return [...map.entries()]
+      .map(([title, max_score]) => ({ title, max_score }))
+      .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
+  }
+
   const filteredStudents = useMemo(() => {
     const q = query.trim().toUpperCase();
-    if (!q) return students;
-    return students.filter((student) =>
-      getProfileDisplayName(student).includes(q) ||
-      (student.email ?? "").toUpperCase().includes(q),
-    );
+    const list = !q
+      ? students
+      : students.filter(
+          (student) =>
+            getProfileDisplayName(student).includes(q) ||
+            (student.email ?? "").toUpperCase().includes(q),
+        );
+    return sortByLastName(list);
   }, [query, students]);
 
-  const alphabeticalStudents = useMemo(() => {
-    const getParts = (s: Row) => {
-      const parsed = splitStoredName(s.full_name);
-      const last = (s.last_name ?? parsed.lastName ?? "").trim().toUpperCase();
-      const first = (s.first_name ?? parsed.firstName ?? "").trim().toUpperCase();
-      const middle = (s.middle_name ?? parsed.middleName ?? "").trim().toUpperCase();
-      return { last, first, middle };
-    };
-    return [...students].sort((a, b) => {
-      const A = getParts(a);
-      const B = getParts(b);
-      return A.last.localeCompare(B.last) || A.first.localeCompare(B.first) || A.middle.localeCompare(B.middle);
-    });
-  }, [students]);
+  const alphabeticalStudents = useMemo(() => sortByLastName(students), [students]);
+
+  async function loadTitleCatalog() {
+    const [quizRes, performanceRes] = await Promise.all([
+      supabase.from("academic_quiz_scores").select("title, max_score").order("created_at", { ascending: false }),
+      supabase
+        .from("academic_performance_scores")
+        .select("title, max_score")
+        .order("created_at", { ascending: false }),
+    ]);
+    if (quizRes.error) throw quizRes.error;
+    if (performanceRes.error) throw performanceRes.error;
+    setQuizTitles(uniqueTitlesFromRows((quizRes.data ?? []) as { title: string; max_score: number | null }[]));
+    setPerformanceTitles(
+      uniqueTitlesFromRows((performanceRes.data ?? []) as { title: string; max_score: number | null }[]),
+    );
+  }
+
+  async function applyQuizTitle(title: string, maxScoreHint?: number) {
+    const clean = title.trim();
+    setQuizBatchTitle(clean);
+    setQuizTitlePick(clean);
+    if (maxScoreHint != null) setQuizBatchMaxScore(String(maxScoreHint));
+
+    if (!clean || alphabeticalStudents.length === 0) {
+      setQuizBatchScores({});
+      return;
+    }
+
+    const ids = alphabeticalStudents.map((s) => s.id);
+    const { data, error } = await supabase
+      .from("academic_quiz_scores")
+      .select("student_id, score, max_score")
+      .eq("title", clean)
+      .in("student_id", ids);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    const scoreMap: Record<string, string> = {};
+    let foundMax: number | null = maxScoreHint ?? null;
+    for (const row of (data ?? []) as { student_id: string; score: number; max_score: number }[]) {
+      scoreMap[row.student_id] = String(row.score ?? "");
+      if (foundMax == null && row.max_score != null) foundMax = Number(row.max_score);
+    }
+    setQuizBatchScores(scoreMap);
+    if (foundMax != null) setQuizBatchMaxScore(String(foundMax));
+  }
+
+  async function applyPerformanceTitle(title: string, maxScoreHint?: number) {
+    const clean = title.trim();
+    setPerformanceBatchTitle(clean);
+    setPerformanceTitlePick(clean);
+    if (maxScoreHint != null) setPerformanceBatchMaxScore(String(maxScoreHint));
+
+    if (!clean || alphabeticalStudents.length === 0) {
+      setPerformanceBatchScores({});
+      return;
+    }
+
+    const ids = alphabeticalStudents.map((s) => s.id);
+    const { data, error } = await supabase
+      .from("academic_performance_scores")
+      .select("student_id, score, max_score")
+      .eq("title", clean)
+      .in("student_id", ids);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    const scoreMap: Record<string, string> = {};
+    let foundMax: number | null = maxScoreHint ?? null;
+    for (const row of (data ?? []) as { student_id: string; score: number; max_score: number }[]) {
+      scoreMap[row.student_id] = String(row.score ?? "");
+      if (foundMax == null && row.max_score != null) foundMax = Number(row.max_score);
+    }
+    setPerformanceBatchScores(scoreMap);
+    if (foundMax != null) setPerformanceBatchMaxScore(String(foundMax));
+  }
+
+  useEffect(() => {
+    if (mode !== "gradebook") return;
+    void (async () => {
+      try {
+        await loadTitleCatalog();
+      } catch (e: unknown) {
+        toast.error(e instanceof Error ? e.message : "Could not load existing titles");
+      }
+    })();
+  }, [mode]);
 
   useEffect(() => {
     if (mode !== "gradebook") return;
     const ids = students.map((s) => s.id);
-    if (!ids.length) return;
+    if (!ids.length) {
+      setTermBatchGrades({});
+      return;
+    }
     void (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("academic_term_grades")
         .select("student_id, grade_value")
         .eq("term_no", termBatchNo)
         .in("student_id", ids);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
       const map: Record<string, string> = {};
       (data ?? []).forEach((row: { student_id: string; grade_value: string }) => {
         map[row.student_id] = row.grade_value;
@@ -261,7 +386,7 @@ function AdminStudents() {
   async function saveQuizBatch() {
     const title = quizBatchTitle.trim();
     if (!title) {
-      toast.error("Enter a quiz title");
+      toast.error("Enter or pick a quiz title");
       return;
     }
     const max = parseScore(quizBatchMaxScore);
@@ -289,12 +414,19 @@ function AdminStudents() {
 
     setBatchBusy(true);
     try {
-      const scoredIds = toInsert.map((r) => r.student_id);
-      await supabase.from("academic_quiz_scores").delete().in("student_id", scoredIds).eq("title", title);
+      const allIds = alphabeticalStudents.map((s) => s.id);
+      const { error: delError } = await supabase
+        .from("academic_quiz_scores")
+        .delete()
+        .eq("title", title)
+        .in("student_id", allIds);
+      if (delError) throw delError;
       const { error } = await supabase.from("academic_quiz_scores").insert(toInsert);
       if (error) throw error;
       toast.success(`Quiz scores saved for ${toInsert.length} student(s)`);
-      setQuizBatchScores({});
+      setQuizTitlePick(title);
+      await loadTitleCatalog();
+      await applyQuizTitle(title, max);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to save quiz scores");
     } finally {
@@ -305,7 +437,7 @@ function AdminStudents() {
   async function savePerformanceBatch() {
     const title = performanceBatchTitle.trim();
     if (!title) {
-      toast.error("Enter a performance title");
+      toast.error("Enter or pick a performance title");
       return;
     }
     const max = parseScore(performanceBatchMaxScore);
@@ -333,16 +465,19 @@ function AdminStudents() {
 
     setBatchBusy(true);
     try {
-      const scoredIds = toInsert.map((r) => r.student_id);
-      await supabase
+      const allIds = alphabeticalStudents.map((s) => s.id);
+      const { error: delError } = await supabase
         .from("academic_performance_scores")
         .delete()
-        .in("student_id", scoredIds)
-        .eq("title", title);
+        .eq("title", title)
+        .in("student_id", allIds);
+      if (delError) throw delError;
       const { error } = await supabase.from("academic_performance_scores").insert(toInsert);
       if (error) throw error;
       toast.success(`Performance scores saved for ${toInsert.length} student(s)`);
-      setPerformanceBatchScores({});
+      setPerformanceTitlePick(title);
+      await loadTitleCatalog();
+      await applyPerformanceTitle(title, max);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Failed to save performance scores");
     } finally {
@@ -476,11 +611,40 @@ function AdminStudents() {
             </div>
 
             <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="block sm:col-span-2">
+                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Pick existing quiz title</span>
+                <select
+                  value={quizTitlePick}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (!value) {
+                      setQuizTitlePick("");
+                      setQuizBatchTitle("");
+                      setQuizBatchMaxScore("0");
+                      setQuizBatchScores({});
+                      return;
+                    }
+                    const found = quizTitles.find((t) => t.title === value);
+                    void applyQuizTitle(value, found?.max_score);
+                  }}
+                  className="mt-1 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
+                >
+                  <option value="">New quiz title…</option>
+                  {quizTitles.map((t) => (
+                    <option key={t.title} value={t.title}>
+                      {t.title} (max {t.max_score})
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="block">
                 <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Quiz title</span>
                 <input
                   value={quizBatchTitle}
-                  onChange={(e) => setQuizBatchTitle(e.target.value)}
+                  onChange={(e) => {
+                    setQuizBatchTitle(e.target.value);
+                    setQuizTitlePick("");
+                  }}
                   placeholder="e.g. Quiz 1 (Module 1)"
                   className="mt-1 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
                 />
@@ -496,6 +660,10 @@ function AdminStudents() {
                   className="mt-1 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
                 />
               </label>
+            </div>
+
+            <div className="mt-3 text-[10px] uppercase tracking-widest text-muted-foreground">
+              Students A–Z by last name
             </div>
 
             <div className="mt-4 space-y-2">
@@ -551,11 +719,40 @@ function AdminStudents() {
             </div>
 
             <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="block sm:col-span-2">
+                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Pick existing performance title</span>
+                <select
+                  value={performanceTitlePick}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (!value) {
+                      setPerformanceTitlePick("");
+                      setPerformanceBatchTitle("");
+                      setPerformanceBatchMaxScore("0");
+                      setPerformanceBatchScores({});
+                      return;
+                    }
+                    const found = performanceTitles.find((t) => t.title === value);
+                    void applyPerformanceTitle(value, found?.max_score);
+                  }}
+                  className="mt-1 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
+                >
+                  <option value="">New performance title…</option>
+                  {performanceTitles.map((t) => (
+                    <option key={t.title} value={t.title}>
+                      {t.title} (max {t.max_score})
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="block">
                 <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Performance title</span>
                 <input
                   value={performanceBatchTitle}
-                  onChange={(e) => setPerformanceBatchTitle(e.target.value)}
+                  onChange={(e) => {
+                    setPerformanceBatchTitle(e.target.value);
+                    setPerformanceTitlePick("");
+                  }}
                   placeholder="e.g. Speaking (Rubric)"
                   className="mt-1 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
                 />
@@ -571,6 +768,10 @@ function AdminStudents() {
                   className="mt-1 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
                 />
               </label>
+            </div>
+
+            <div className="mt-3 text-[10px] uppercase tracking-widest text-muted-foreground">
+              Students A–Z by last name
             </div>
 
             <div className="mt-4 space-y-2">
@@ -636,6 +837,10 @@ function AdminStudents() {
                   Term {n}
                 </button>
               ))}
+            </div>
+
+            <div className="mt-3 text-[10px] uppercase tracking-widest text-muted-foreground">
+              Students A–Z by last name
             </div>
 
             <div className="mt-4 space-y-2">
