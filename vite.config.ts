@@ -35,4 +35,10 @@ export default defineConfig({
   vite: {
     plugins: [phaserSsrStubPlugin()],
   },
+  nitro: {
+    // Merge Durable Object named exports into the Worker entry (Nitro 3).
+    cloudflare: {
+      exports: "./exports.cloudflare.ts",
+    },
+  },
 });

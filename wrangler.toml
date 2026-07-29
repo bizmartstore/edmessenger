@@ -2,6 +2,10 @@ name = "edmessenger"
 compatibility_date = "2024-12-01"
 main = ".output/server/index.mjs"
 
+# Ensure DO export patch runs even when CF invokes wrangler deploy directly
+[build]
+command = "npm run build"
+
 # Keep the Worker + Supabase project warm
 [triggers]
 crons = ["*/5 * * * *"]
