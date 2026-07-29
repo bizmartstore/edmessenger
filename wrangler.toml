@@ -21,4 +21,5 @@ class_name = "GotchiTowerRoom"
 
 [[migrations]]
 tag = "gotchi_tower_v1"
-new_classes = ["GotchiTowerRoom"]
+# Free plan requires SQLite-backed DO namespaces (not legacy new_classes / KV)
+new_sqlite_classes = ["GotchiTowerRoom"]
