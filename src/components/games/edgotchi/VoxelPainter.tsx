@@ -112,7 +112,15 @@ export function VoxelPainter({
   );
 }
 
-export function VoxelPreview({ voxels, size = 8 }: { voxels: Voxel[]; size?: number }) {
+export function VoxelPreview({
+  voxels,
+  size = 8,
+  className,
+}: {
+  voxels: Voxel[];
+  size?: number;
+  className?: string;
+}) {
   const map = useMemo(() => {
     const m = new Map<string, number>();
     for (const v of voxels) m.set(`${v.x},${v.y}`, v.c);
@@ -121,7 +129,10 @@ export function VoxelPreview({ voxels, size = 8 }: { voxels: Voxel[]; size?: num
 
   return (
     <div
-      className="grid gap-px rounded-xl bg-slate-900 p-1.5"
+      className={cn(
+        "grid gap-px rounded-xl bg-gradient-to-b from-slate-800 to-slate-950 p-1.5 shadow-inner ring-1 ring-white/10",
+        className,
+      )}
       style={{ gridTemplateColumns: `repeat(${VOXEL_COLS}, ${size}px)` }}
     >
       {Array.from({ length: VOXEL_ROWS * VOXEL_COLS }, (_, i) => {
@@ -136,6 +147,7 @@ export function VoxelPreview({ voxels, size = 8 }: { voxels: Voxel[]; size?: num
               height: size,
               background: c != null ? PALETTE[c] : "transparent",
               borderRadius: 2,
+              boxShadow: c != null ? "inset 0 1px 0 rgba(255,255,255,0.25)" : undefined,
             }}
           />
         );

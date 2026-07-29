@@ -253,6 +253,112 @@ export function xpToNextLevel(level: number): number {
   return 40 + level * 25;
 }
 
+/** Cost in tower-earned GCoins to redesign an existing Tower Gotchi. */
+export const GOTCHI_EDIT_COST = 25;
+
+export type FloorEnemyDef = {
+  id: string;
+  name: string;
+  isBoss: boolean;
+};
+
+/** Enemies that must be cleared before ascending this floor. */
+export function enemiesForFloor(floor: number): FloorEnemyDef[] {
+  const isBossFloor = floor % 10 === 0;
+  if (isBossFloor) {
+    return [
+      {
+        id: `mob-${floor}-boss`,
+        name: `Guardian of Floor ${floor}`,
+        isBoss: true,
+      },
+    ];
+  }
+  const count = Math.min(4, 1 + Math.floor((floor - 1) / 3));
+  const names = ["Wardling", "Shardling", "Tome Imp", "Crystal Bat", "Arcane Wisp"];
+  return Array.from({ length: count }, (_, i) => ({
+    id: `mob-${floor}-${i}`,
+    name: `${names[i % names.length]} ${floor}`,
+    isBoss: false,
+  }));
+}
+
+export function foeMaxHpFor(
+  floor: number,
+  mode: "monster" | "boss" | "pvp",
+): number {
+  if (mode === "pvp") return 100 + floor * 2;
+  if (mode === "boss") return 140 + floor * 12;
+  return 45 + floor * 9;
+}
+
+/** Enemy retaliation — scales hard with floor level. */
+export function foeRetaliationDamage(
+  floor: number,
+  mode: "monster" | "boss" | "pvp",
+  defense: number,
+  missedQuiz: boolean,
+): number {
+  const base = mode === "boss" ? 14 : mode === "pvp" ? 10 : 7;
+  const perFloor = mode === "boss" ? 2.8 : 2.2;
+  const scaled = base + Math.floor(floor * perFloor);
+  const raw = missedQuiz ? scaled + 5 : scaled;
+  return Math.max(4, Math.floor(raw - defense / 5));
+}
+
+export type TowerFloorProgress = { floor: number; defeated: string[] };
+
+export function readFloorProgress(
+  equipment: Record<string, unknown> | null | undefined,
+  floor: number,
+): string[] {
+  const tp = equipment?.tower_progress as TowerFloorProgress | undefined;
+  if (!tp || tp.floor !== floor || !Array.isArray(tp.defeated)) return [];
+  return tp.defeated.map(String);
+}
+
+export function withFloorProgress(
+  equipment: Record<string, unknown> | null | undefined,
+  floor: number,
+  defeated: string[],
+): Record<string, unknown> {
+  return { ...(equipment ?? {}), tower_progress: { floor, defeated } };
+}
+
+export type TowerLeaderboardEntry = {
+  rank: number;
+  user_id: string;
+  display_name: string;
+  gotchi_name: string;
+  floor: number;
+  level: number;
+  battles_won: number;
+  gcoins_earned: number;
+  voxels: Voxel[];
+};
+
+/** Per-event climb board — highest floor, then wins, then earned GCoins. */
+export function rankTowerPlayers(players: TowerPlayer[]): TowerLeaderboardEntry[] {
+  return [...players]
+    .sort((a, b) => {
+      if (b.floor !== a.floor) return b.floor - a.floor;
+      if (b.battles_won !== a.battles_won) return b.battles_won - a.battles_won;
+      if (b.gcoins_earned !== a.gcoins_earned) return b.gcoins_earned - a.gcoins_earned;
+      return b.level - a.level;
+    })
+    .map((p, i) => ({
+      rank: i + 1,
+      user_id: p.user_id,
+      display_name: p.display_name,
+      gotchi_name: p.gotchi_name,
+      floor: p.floor,
+      level: p.level,
+      battles_won: p.battles_won,
+      gcoins_earned: p.gcoins_earned,
+      voxels: p.voxels,
+    }));
+}
+
 export function randomQuizGateReward(floor: number) {
   return {
     xp: 12 + floor * 2,

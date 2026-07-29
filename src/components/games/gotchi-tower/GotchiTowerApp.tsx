@@ -8,6 +8,7 @@ import {
   Loader2,
   Sparkles,
   Swords,
+  Trophy,
   Users,
   Zap,
 } from "lucide-react";
@@ -16,17 +17,24 @@ import type { Voxel } from "@/lib/edgotchi";
 import { VoxelPainter, VoxelPreview } from "@/components/games/edgotchi/VoxelPainter";
 import {
   ATTR_LABELS,
+  GOTCHI_EDIT_COST,
   derivedStats,
+  enemiesForFloor,
+  foeMaxHpFor,
+  foeRetaliationDamage,
   getTowerEvent,
   joinTowerByCode,
   listEventPlayers,
   listStudentTowerEvents,
   loadApprovedQuestionsForFloor,
   loadTowerAvatar,
+  rankTowerPlayers,
+  readFloorProgress,
   saveTowerAvatar,
   themeForFloor,
   towerWsUrl,
   updateTowerPlayer,
+  withFloorProgress,
   xpToNextLevel,
   type TowerAvatar,
   type TowerEvent,
@@ -126,6 +134,10 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
   const [creatingGotchi, setCreatingGotchi] = useState(false);
   const [pendingJoinCode, setPendingJoinCode] = useState<string | null>(null);
   const [wsStatus, setWsStatus] = useState<"off" | "connecting" | "live" | "fallback">("off");
+  const [defeatedOnFloor, setDefeatedOnFloor] = useState<string[]>([]);
+  const [activeEnemyId, setActiveEnemyId] = useState<string | null>(null);
+  const [showBoard, setShowBoard] = useState(true);
+  const [paidEdit, setPaidEdit] = useState(false);
 
   const floorHostRef = useRef<HTMLDivElement>(null);
   const battleHostRef = useRef<HTMLDivElement>(null);
@@ -193,9 +205,41 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
     if (!user || creatingGotchi) return;
     setCreatingGotchi(true);
     try {
+      // Remodel during a run costs tower-earned GCoins
+      if (paidEdit) {
+        if (!player) {
+          toast.error("Join a tower first to remodel with earned GCoins");
+          return;
+        }
+        if (player.gcoins_earned < GOTCHI_EDIT_COST) {
+          toast.error(`Need ${GOTCHI_EDIT_COST} tower GCoins to remodel (you have ${player.gcoins_earned})`);
+          return;
+        }
+      }
+
       const row = await saveTowerAvatar(user.id, gotchiName, voxels);
       setAvatar(row);
       setVoxels(row.voxels);
+
+      if (paidEdit && player) {
+        const next = {
+          ...player,
+          gotchi_name: row.name,
+          voxels: row.voxels,
+          gcoins_earned: player.gcoins_earned - GOTCHI_EDIT_COST,
+        };
+        setPlayer(next);
+        await updateTowerPlayer(player.id, {
+          gotchi_name: next.gotchi_name,
+          voxels: next.voxels,
+          gcoins_earned: next.gcoins_earned,
+        });
+        toast.success(`Tower Gotchi remodeled (−${GOTCHI_EDIT_COST} GCoins)`);
+        setPaidEdit(false);
+        setScreen("lobby");
+        return;
+      }
+
       toast.success("Tower Gotchi saved");
       if (pendingJoinCode) {
         const codeToJoin = pendingJoinCode;
@@ -210,6 +254,21 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
     } finally {
       setCreatingGotchi(false);
     }
+  }
+
+  function openPaidGotchiEdit() {
+    if (!player) {
+      toast.error("Enter a tower lobby first — remodeling uses GCoins earned in that climb");
+      return;
+    }
+    if (player.gcoins_earned < GOTCHI_EDIT_COST) {
+      toast.error(`Need ${GOTCHI_EDIT_COST} tower GCoins (you have ${player.gcoins_earned})`);
+      return;
+    }
+    setPaidEdit(true);
+    setGotchiName(player.gotchi_name || avatar?.name || "");
+    setVoxels(player.voxels?.length ? player.voxels : avatar?.voxels || []);
+    setScreen("create");
   }
 
   async function completeJoin(rawCode: string, av?: TowerAvatar | null) {
@@ -255,6 +314,7 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       }
       setPlayer(row);
       setVoxels(row.voxels?.length ? row.voxels : useAvatar.voxels);
+      setDefeatedOnFloor(readFloorProgress(row.equipment, row.floor));
       try {
         setPeers(await listEventPlayers(row.event_id));
       } catch {
@@ -366,13 +426,18 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
     if (!event || !player) return;
     if (event.status === "lobby") {
       toast.message("Waiting for the teacher to start the tower…");
-      // Allow explore preview in lobby for polish — still playable
     }
+    setDefeatedOnFloor(readFloorProgress(player.equipment, player.floor));
     try {
       const qs = await loadApprovedQuestionsForFloor(event.id, player.floor);
       setQuestions(qs.length ? qs : FALLBACK_QUESTIONS);
     } catch {
       setQuestions(FALLBACK_QUESTIONS);
+    }
+    try {
+      setPeers(await listEventPlayers(event.id));
+    } catch {
+      /* keep existing peers */
     }
     setScreen("floor");
     connectRealtime(event, player);
@@ -391,6 +456,10 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
         floorCount: event?.floor_count ?? 20,
         voxels: player.voxels?.length ? player.voxels : voxels,
         playerName: player.gotchi_name || player.display_name,
+        enemies: enemiesForFloor(player.floor),
+        defeatedEnemyIds: defeatedOnFloor,
+        portalUnlocked:
+          enemiesForFloor(player.floor).every((e) => defeatedOnFloor.includes(e.id)),
         peers: peers
           .filter((p) => p.user_id !== player.user_id && p.floor === player.floor)
           .map((p) => ({
@@ -429,7 +498,7 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       floorGameRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, player?.id, player?.floor]);
+  }, [screen, player?.id, player?.floor, defeatedOnFloor.join("|")]);
 
   useEffect(() => {
     if (screen !== "battle" || !battleHostRef.current || !player) return;
@@ -441,6 +510,7 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
         playerName: player.gotchi_name,
         foeName,
         voxels: player.voxels?.length ? player.voxels : voxels,
+        floor: player.floor,
         isBoss: battleMode === "boss",
         isPvp: battleMode === "pvp",
       }) as unknown as PhaserBridge;
@@ -460,11 +530,20 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
   async function handleInteract(evt: FloorInteractEvent) {
     if (!player || !event) return;
     if (evt.kind === "portal") {
-      openQuiz("gate", "Ascending Portal");
+      const required = enemiesForFloor(player.floor);
+      const cleared = required.every((e) => defeatedOnFloor.includes(e.id));
+      if (!cleared || evt.locked) {
+        toast.error(
+          `Defeat all wardens first (${defeatedOnFloor.length}/${required.length})`,
+        );
+        return;
+      }
+      openQuiz("gate", "Ascending Spiral");
       return;
     }
     if (evt.kind === "quiz_gate") {
-      openQuiz("gate", "Quiz Gate");
+      // Bonus shrine — rewards only, does not ascend
+      openQuiz("chest", "Knowledge Shrine");
       return;
     }
     if (evt.kind === "chest") {
@@ -473,18 +552,23 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
     }
     if (evt.kind === "heal") {
       const healed = Math.min(player.max_hp, player.hp + 25 + player.harmony);
-      const next = { ...player, hp: healed, energy: Math.min(player.max_energy, player.energy + 15) };
+      const next = {
+        ...player,
+        hp: healed,
+        energy: Math.min(player.max_energy, player.energy + 15),
+      };
       setPlayer(next);
       await updateTowerPlayer(player.id, { hp: next.hp, energy: next.energy });
       toast.success("Harmony restored your Gotchi");
       return;
     }
     if (evt.kind === "merchant") {
-      toast.message("Merchant: trade cosmetics & materials coming soon — keep climbing!");
+      openPaidGotchiEdit();
       return;
     }
     if (evt.kind === "monster") {
-      await beginBattle(player.floor % 10 === 0 ? "boss" : "monster", evt.name);
+      setActiveEnemyId(evt.id);
+      await beginBattle(evt.isBoss || player.floor % 10 === 0 ? "boss" : "monster", evt.name);
       return;
     }
     if (evt.kind === "challenge_peer") {
@@ -492,6 +576,7 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
         toast.error("PvP is disabled for this event");
         return;
       }
+      setActiveEnemyId(null);
       wsRef.current?.send(
         JSON.stringify({ type: "challenge", to: evt.userId, wager: event.pvp_wager_min }),
       );
@@ -509,12 +594,18 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
 
   async function beginBattle(mode: BattleMode, name: string) {
     if (!player) return;
+    if (mode === "pvp") setActiveEnemyId(null);
     setBattleMode(mode);
     setFoeName(name);
-    const max = mode === "boss" ? 160 + player.floor * 4 : mode === "pvp" ? 100 : 60 + player.floor * 3;
+    const max = foeMaxHpFor(
+      player.floor,
+      mode === "boss" ? "boss" : mode === "pvp" ? "pvp" : "monster",
+    );
     setFoeMaxHp(max);
     setFoeHp(max);
-    setBattleLog([`${name} appears! Answer quizzes to fight.`]);
+    setBattleLog([
+      `${name} bars the way on floor ${player.floor}! Higher floors hit harder — answer quizzes to fight.`,
+    ]);
     setScreen("battle");
     setQuiz(pickQuestion());
     setQuizOpen(true);
@@ -561,12 +652,21 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
     if (battleMode === "gate" || battleMode === "chest") {
       if (correct) {
         if (battleMode === "gate") {
+          const required = enemiesForFloor(player.floor);
+          if (!required.every((e) => defeatedOnFloor.includes(e.id))) {
+            toast.error("Portal is still sealed — defeat every warden on this floor");
+            setPendingAction(null);
+            return;
+          }
           next.floor = Math.min(event?.floor_count ?? 20, next.floor + 1);
+          next.equipment = withFloorProgress(next.equipment, next.floor, []);
+          setDefeatedOnFloor([]);
           toast.success(`Ascended to floor ${next.floor} · ${themeForFloor(next.floor).name}`);
           wsRef.current?.send(JSON.stringify({ type: "floor_advance", floor: next.floor }));
           awardGcoins("complete_reviewer", `gt-floor-${event?.id}-${next.floor}`);
         } else {
           next.inventory = [...next.inventory, { id: `relic-${Date.now()}`, name: "Tower Relic" }];
+          next.gcoins_earned += 2;
           toast.success("Treasure unlocked!");
         }
       }
@@ -588,6 +688,7 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
         max_hp: next.max_hp,
         max_energy: next.max_energy,
         inventory: next.inventory,
+        equipment: next.equipment,
       });
       setPendingAction(null);
       if (battleMode === "gate" && correct) {
@@ -605,6 +706,8 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       spirit: next.spirit,
       harmony: next.harmony,
     });
+    const combatMode =
+      battleMode === "boss" ? "boss" : battleMode === "pvp" ? "pvp" : "monster";
 
     if (pendingAction === "heal") {
       if (correct) {
@@ -614,20 +717,28 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
         setBattleLog((l) => [...l, `Harmony pulse heals ${heal} HP.`]);
         battleGameRef.current?.events.emit("gt-battle-vfx", { type: "heal", amount: heal });
       } else {
-        next.hp = Math.max(0, next.hp - 8);
-        setBattleLog((l) => [...l, "Heal fizzled — foe strikes!"]);
+        const retal = foeRetaliationDamage(player.floor, combatMode, stats.defense, true);
+        next.hp = Math.max(0, next.hp - retal);
+        setBattleLog((l) => [...l, `Heal fizzled — ${foeName} strikes for ${retal}!`]);
+        battleGameRef.current?.events.emit("gt-battle-vfx", {
+          type: "hit",
+          target: "player",
+          amount: retal,
+        });
       }
     } else {
       const dmg = correct
-        ? Math.floor(stats.skillPower * (pendingAction === "skill" ? 1.4 : 1) * (Math.random() < stats.critChance ? 1.6 : 1))
+        ? Math.floor(
+            stats.skillPower *
+              (pendingAction === "skill" ? 1.4 : 1) *
+              (Math.random() < stats.critChance ? 1.6 : 1),
+          )
         : Math.floor(4 + Math.random() * 5);
       const newFoe = Math.max(0, foeHp - dmg);
       setFoeHp(newFoe);
       setBattleLog((l) => [
         ...l,
-        correct
-          ? `Quiz strike deals ${dmg} damage!`
-          : `Missed quiz — weak hit for ${dmg}.`,
+        correct ? `Quiz strike deals ${dmg} damage!` : `Missed quiz — weak hit for ${dmg}.`,
       ]);
       battleGameRef.current?.events.emit("gt-battle-vfx", {
         type: "hit",
@@ -635,7 +746,7 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
         amount: dmg,
       });
       if (!correct) {
-        const retal = 8 + Math.floor(player.floor / 2);
+        const retal = foeRetaliationDamage(player.floor, combatMode, stats.defense, true);
         next.hp = Math.max(0, next.hp - retal);
         battleGameRef.current?.events.emit("gt-battle-vfx", {
           type: "hit",
@@ -644,26 +755,38 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
         });
         setBattleLog((l) => [...l, `${foeName} retaliates for ${retal}!`]);
       } else if (newFoe > 0) {
-        const retal = Math.max(4, 10 + Math.floor(player.floor / 3) - Math.floor(stats.defense / 4));
+        const retal = foeRetaliationDamage(player.floor, combatMode, stats.defense, false);
         next.hp = Math.max(0, next.hp - retal);
         battleGameRef.current?.events.emit("gt-battle-vfx", {
           type: "hit",
           target: "player",
           amount: retal,
         });
+        setBattleLog((l) => [...l, `${foeName} counters for ${retal}!`]);
       }
 
       if (newFoe <= 0) {
         next.battles_won += 1;
         next.xp += battleMode === "boss" ? 40 : 18;
-        next.gcoins_earned += battleMode === "boss" ? 10 : 3;
+        next.gcoins_earned += battleMode === "boss" ? 10 : 3 + Math.floor(player.floor / 5);
         battleGameRef.current?.events.emit("gt-battle-vfx", { type: "win" });
         toast.success(`${foeName} defeated!`);
-        if (battleMode === "boss") {
-          next.floor = Math.min(event?.floor_count ?? 20, next.floor + 1);
-          next.titles = [...new Set([...next.titles, `Guardian Slayer ${player.floor}`])];
-          awardGcoins("complete_reviewer", `gt-boss-${event?.id}-${player.floor}`);
+
+        if (activeEnemyId && (battleMode === "monster" || battleMode === "boss")) {
+          const defeated = [...new Set([...defeatedOnFloor, activeEnemyId])];
+          setDefeatedOnFloor(defeated);
+          next.equipment = withFloorProgress(next.equipment, next.floor, defeated);
+          const required = enemiesForFloor(next.floor);
+          if (required.every((e) => defeated.includes(e.id))) {
+            toast.success("Floor cleared! The ascend portal unlocks.");
+          }
+          if (battleMode === "boss") {
+            next.titles = [...new Set([...next.titles, `Guardian Slayer ${player.floor}`])];
+            awardGcoins("complete_reviewer", `gt-boss-${event?.id}-${player.floor}`);
+          }
         }
+
+        setActiveEnemyId(null);
         setPlayer(next);
         await persistPlayer(next);
         setTimeout(() => setScreen("floor"), 800);
@@ -674,12 +797,18 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
 
     if (next.hp <= 0) {
       next.battles_lost += 1;
-      next.hp = Math.max(20, Math.floor(next.max_hp * 0.35));
+      next.floor = 1;
+      next.hp = Math.max(20, Math.floor(next.max_hp * 0.4));
+      next.energy = Math.min(next.max_energy, Math.floor(next.max_energy * 0.5));
+      next.equipment = withFloorProgress(next.equipment, 1, []);
+      setDefeatedOnFloor([]);
+      setActiveEnemyId(null);
       battleGameRef.current?.events.emit("gt-battle-vfx", { type: "lose" });
-      toast.error("Your Gotchi was overwhelmed — retreat to recover.");
+      toast.error("Defeated! You wake at Floor 1 — climb again.");
+      wsRef.current?.send(JSON.stringify({ type: "floor_advance", floor: 1 }));
       setPlayer(next);
       await persistPlayer(next);
-      setTimeout(() => setScreen("floor"), 800);
+      setTimeout(() => setScreen("floor"), 900);
       setPendingAction(null);
       return;
     }
@@ -711,6 +840,9 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       battles_lost: next.battles_lost,
       titles: next.titles,
       inventory: next.inventory,
+      equipment: next.equipment,
+      gotchi_name: next.gotchi_name,
+      voxels: next.voxels,
     }).catch(() => {});
   }
 
@@ -738,7 +870,8 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
             if (screen === "hub") onBack();
             else if (screen === "create") {
               setPendingJoinCode(null);
-              setScreen("hub");
+              setPaidEdit(false);
+              setScreen(player ? "lobby" : "hub");
             } else if (screen === "floor" || screen === "battle") setScreen("lobby");
             else setScreen("hub");
           }}
@@ -774,12 +907,21 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       {screen === "create" && (
         <div className="space-y-3">
           <Panel className="bg-gradient-to-br from-amber-500/15 via-rose-500/10 to-indigo-500/15">
-            <div className="text-sm font-bold">Create your Tower Gotchi</div>
+            <div className="text-sm font-bold">
+              {paidEdit ? "Remodel your Tower Gotchi" : "Create your Tower Gotchi"}
+            </div>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Separate from EdGotchi — this avatar is only used inside Gotchi Tower.
+              {paidEdit
+                ? `Costs ${GOTCHI_EDIT_COST} GCoins earned in this tower climb (you have ${player?.gcoins_earned ?? 0}).`
+                : "Separate from EdGotchi — this avatar is only used inside Gotchi Tower."}
               {pendingJoinCode ? ` Then you will join code ${pendingJoinCode}.` : ""}
             </p>
           </Panel>
+          <div className="flex justify-center">
+            <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-b from-slate-900 to-indigo-950 p-3 shadow-glow">
+              <VoxelPreview voxels={voxels} size={12} />
+            </div>
+          </div>
           <input
             value={gotchiName}
             onChange={(e) => setGotchiName(e.target.value)}
@@ -788,20 +930,24 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
             className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm font-semibold outline-none focus:border-primary"
           />
           <VoxelPainter
+            key={`painter-${paidEdit ? "paid" : "new"}-${avatar?.user_id ?? "x"}-${player?.id ?? "hub"}`}
             initial={voxels}
             onChange={setVoxels}
             caption="cubes · your Gotchi Tower avatar"
           />
-          <div className="flex justify-center">
-            <VoxelPreview voxels={voxels} size={10} />
-          </div>
           <button
             type="button"
             disabled={creatingGotchi || gotchiName.trim().length < 2 || voxels.length < 4}
             onClick={() => void handleSaveAvatar()}
             className="w-full rounded-2xl py-3 text-sm font-bold gradient-primary text-primary-foreground shadow-glow disabled:opacity-40"
           >
-            {creatingGotchi ? "Saving…" : pendingJoinCode ? "Save & join tower" : "Save Tower Gotchi"}
+            {creatingGotchi
+              ? "Saving…"
+              : paidEdit
+                ? `Remodel (−${GOTCHI_EDIT_COST} GCoins)`
+                : pendingJoinCode
+                  ? "Save & join tower"
+                  : "Save Tower Gotchi"}
           </button>
         </div>
       )}
@@ -822,17 +968,25 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
             </div>
           ) : avatar ? (
             <Panel className="flex items-center gap-3">
-              <VoxelPreview voxels={avatar.voxels} size={7} />
+              <div className="rounded-xl border border-amber-500/25 bg-slate-900 p-1.5">
+                <VoxelPreview voxels={avatar.voxels} size={8} />
+              </div>
               <div className="min-w-0 flex-1">
                 <div className="font-bold truncate">{avatar.name}</div>
                 <div className="text-[11px] text-muted-foreground">Your Tower Gotchi</div>
               </div>
               <button
                 type="button"
-                onClick={() => setScreen("create")}
+                onClick={() => {
+                  if (player) openPaidGotchiEdit();
+                  else
+                    toast.message(
+                      `Remodeling costs ${GOTCHI_EDIT_COST} GCoins earned inside a tower — join an event first.`,
+                    );
+                }}
                 className="rounded-xl bg-muted px-3 py-1.5 text-xs font-semibold"
               >
-                Edit
+                Remodel
               </button>
             </Panel>
           ) : (
@@ -909,21 +1063,46 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
             <div className="text-xs font-semibold uppercase tracking-widest text-white/80">Lobby</div>
             <div className="text-xl font-extrabold">{event.title}</div>
             <div className="mt-1 text-sm text-white/90">
-              Code <span className="font-mono font-bold">{event.code}</span> · Floor {player.floor}/{event.floor_count}
+              Code <span className="font-mono font-bold">{event.code}</span> · Floor {player.floor}/
+              {event.floor_count}
             </div>
             <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
               <Chip icon={<Users className="h-3 w-3" />}>{peers.length} climbers</Chip>
               <Chip icon={<Coins className="h-3 w-3" />}>{player.gcoins_earned} earned</Chip>
               <Chip icon={<Sparkles className="h-3 w-3" />}>Lv {player.level}</Chip>
+              <Chip icon={<Swords className="h-3 w-3" />}>
+                {defeatedOnFloor.length}/{enemiesForFloor(player.floor).length} cleared
+              </Chip>
             </div>
           </Panel>
 
+          <Panel className="flex items-center gap-3 bg-gradient-to-r from-slate-900/90 to-indigo-950/80 text-white border-amber-500/20">
+            <div className="rounded-xl border border-amber-400/30 bg-black/40 p-2">
+              <VoxelPreview voxels={player.voxels?.length ? player.voxels : voxels} size={9} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="font-bold truncate">{player.gotchi_name}</div>
+              <div className="text-[11px] text-white/70">Tower Gotchi · Fl. {player.floor}</div>
+            </div>
+            <button
+              type="button"
+              onClick={openPaidGotchiEdit}
+              className="rounded-xl bg-white/15 px-3 py-1.5 text-xs font-semibold"
+            >
+              Remodel ({GOTCHI_EDIT_COST}¢)
+            </button>
+          </Panel>
+
           <Panel>
-            <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">Attributes</div>
+            <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">
+              Attributes
+            </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {(Object.keys(ATTR_LABELS) as Array<keyof typeof ATTR_LABELS>).map((k) => (
                 <div key={k} className="rounded-xl bg-muted px-2.5 py-2">
-                  <div className="text-[10px] font-semibold text-muted-foreground">{ATTR_LABELS[k].label}</div>
+                  <div className="text-[10px] font-semibold text-muted-foreground">
+                    {ATTR_LABELS[k].label}
+                  </div>
                   <div className="text-lg font-extrabold">{player[k]}</div>
                 </div>
               ))}
@@ -931,27 +1110,73 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
           </Panel>
 
           <Panel>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Companions</div>
-              <span className="text-[10px] text-muted-foreground">Team of {player.companions.length}</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {player.companions.map((c) => (
-                <span key={c.def_id} className="rounded-full bg-violet-500/15 px-2.5 py-1 text-xs font-semibold text-violet-800">
-                  {c.def_id} · Lv{c.level}
-                </span>
-              ))}
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowBoard((v) => !v)}
+              className="mb-2 flex w-full items-center justify-between"
+            >
+              <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                <Trophy className="h-3.5 w-3.5 text-amber-500" />
+                Tower leaderboard
+              </div>
+              <span className="text-[10px] text-muted-foreground">
+                {showBoard ? "Hide" : "Show"} · this event only
+              </span>
+            </button>
+            {showBoard && (
+              <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                {rankTowerPlayers(peers.length ? peers : [player]).map((row) => (
+                  <div
+                    key={row.user_id}
+                    className={cn(
+                      "flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs",
+                      row.user_id === player.user_id
+                        ? "bg-amber-500/15 ring-1 ring-amber-500/30"
+                        : "bg-muted/70",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "grid h-6 w-6 place-items-center rounded-full text-[10px] font-extrabold",
+                        row.rank === 1
+                          ? "bg-amber-400 text-amber-950"
+                          : row.rank === 2
+                            ? "bg-slate-300 text-slate-800"
+                            : row.rank === 3
+                              ? "bg-orange-300 text-orange-950"
+                              : "bg-muted-foreground/20 text-muted-foreground",
+                      )}
+                    >
+                      {row.rank}
+                    </span>
+                    <div className="rounded-md bg-slate-900 p-0.5">
+                      <VoxelPreview voxels={row.voxels} size={4} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold truncate">
+                        {row.display_name}
+                        {row.user_id === player.user_id ? " (you)" : ""}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground truncate">
+                        {row.gotchi_name}
+                      </div>
+                    </div>
+                    <div className="text-right font-bold leading-tight">
+                      <div>Fl.{row.floor}</div>
+                      <div className="text-[10px] font-semibold text-muted-foreground">
+                        {row.battles_won}W · {row.gcoins_earned}¢
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </Panel>
 
-          <div className="rounded-2xl border border-border bg-card p-3 max-h-36 overflow-y-auto text-xs space-y-1">
-            {peers.slice(0, 12).map((p) => (
-              <div key={p.id} className="flex justify-between">
-                <span className="font-medium">{p.display_name}</span>
-                <span className="text-muted-foreground">Fl.{p.floor} · Lv{p.level}</span>
-              </div>
-            ))}
-          </div>
+          <p className="text-[11px] text-muted-foreground text-center px-2">
+            Clear every warden on a floor before the portal opens. Defeat sends you back to Floor 1.
+            Higher floors hit harder.
+          </p>
 
           <button
             type="button"
@@ -968,30 +1193,71 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
           <div className="flex items-center gap-2 text-xs">
             <Heart className="h-3.5 w-3.5 text-rose-500" />
             <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-              <div className="h-full bg-rose-500" style={{ width: `${(player.hp / player.max_hp) * 100}%` }} />
+              <div
+                className="h-full bg-rose-500"
+                style={{ width: `${(player.hp / player.max_hp) * 100}%` }}
+              />
             </div>
-            <span className="font-semibold">{player.hp}/{player.max_hp}</span>
+            <span className="font-semibold">
+              {player.hp}/{player.max_hp}
+            </span>
             <Zap className="h-3.5 w-3.5 text-sky-500" />
             <span className="font-semibold">{player.energy}</span>
             <Coins className="h-3.5 w-3.5 text-amber-500" />
             <span className="font-semibold">{player.gcoins_earned}</span>
+            <Swords className="h-3.5 w-3.5 text-violet-500" />
+            <span className="font-semibold">
+              {defeatedOnFloor.length}/{enemiesForFloor(player.floor).length}
+            </span>
           </div>
           <div
             ref={floorHostRef}
-            className="w-full overflow-hidden rounded-2xl border border-border bg-[#0b1220] shadow-card"
-            style={{ minHeight: 360 }}
+            className="w-full overflow-hidden rounded-2xl border border-border bg-[#0b1220] shadow-card ring-1 ring-amber-500/10"
+            style={{ minHeight: 380 }}
           />
-          <form onSubmit={sendChat} className="flex gap-2">
-            <input
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder="Floor chat…"
-              className="flex-1 rounded-xl border border-border bg-muted px-3 py-2 text-sm outline-none"
-            />
-            <button type="submit" className="rounded-xl bg-muted px-3 text-xs font-semibold">
-              Send
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowBoard((v) => !v)}
+              className="rounded-xl bg-muted px-3 py-2 text-xs font-semibold inline-flex items-center gap-1"
+            >
+              <Trophy className="h-3.5 w-3.5 text-amber-500" /> Board
             </button>
-          </form>
+            <button
+              type="button"
+              onClick={openPaidGotchiEdit}
+              className="rounded-xl bg-muted px-3 py-2 text-xs font-semibold"
+            >
+              Remodel ({GOTCHI_EDIT_COST}¢)
+            </button>
+            <form onSubmit={sendChat} className="flex flex-1 gap-2">
+              <input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Floor chat…"
+                className="flex-1 rounded-xl border border-border bg-muted px-3 py-2 text-sm outline-none"
+              />
+              <button type="submit" className="rounded-xl bg-muted px-3 text-xs font-semibold">
+                Send
+              </button>
+            </form>
+          </div>
+          {showBoard && (
+            <div className="rounded-xl border border-border bg-card p-2 max-h-36 overflow-y-auto space-y-1">
+              {rankTowerPlayers(peers.length ? peers : [player])
+                .slice(0, 8)
+                .map((row) => (
+                  <div key={row.user_id} className="flex justify-between text-[11px] px-1">
+                    <span className="font-semibold">
+                      #{row.rank} {row.display_name}
+                    </span>
+                    <span className="text-muted-foreground">
+                      Fl.{row.floor} · {row.battles_won}W
+                    </span>
+                  </div>
+                ))}
+            </div>
+          )}
           {chat.length > 0 && (
             <div className="max-h-20 overflow-y-auto rounded-xl bg-muted/60 px-2 py-1 text-[11px] space-y-0.5">
               {chat.slice(-6).map((line, i) => (
@@ -1000,7 +1266,7 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
             </div>
           )}
           <p className="text-[10px] text-muted-foreground text-center">
-            Move with WASD / arrows / touch · Press E near portals, chests, monsters & peers
+            Defeat all wardens → unlock portal · WASD / touch · E to interact · Death = Floor 1
           </p>
         </div>
       )}
