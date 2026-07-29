@@ -12,7 +12,8 @@ import {
   Zap,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { loadEdgotchi, type Voxel } from "@/lib/edgotchi";
+import type { Voxel } from "@/lib/edgotchi";
+import { VoxelPainter, VoxelPreview } from "@/components/games/edgotchi/VoxelPainter";
 import {
   ATTR_LABELS,
   derivedStats,
@@ -21,10 +22,13 @@ import {
   listEventPlayers,
   listStudentTowerEvents,
   loadApprovedQuestionsForFloor,
+  loadTowerAvatar,
+  saveTowerAvatar,
   themeForFloor,
   towerWsUrl,
   updateTowerPlayer,
   xpToNextLevel,
+  type TowerAvatar,
   type TowerEvent,
   type TowerPlayer,
   type TowerQuestion,
@@ -33,7 +37,7 @@ import { awardGcoins } from "@/lib/gcoins";
 import { cn } from "@/lib/utils";
 import type { FloorInteractEvent } from "./floorScene";
 
-type Screen = "hub" | "lobby" | "floor" | "battle";
+type Screen = "hub" | "create" | "lobby" | "floor" | "battle";
 type BattleMode = "monster" | "boss" | "pvp" | "chest" | "gate";
 
 type PhaserBridge = {
@@ -116,7 +120,11 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
   const [chat, setChat] = useState<string[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [voxels, setVoxels] = useState<Voxel[]>([]);
-  const [gotchiReady, setGotchiReady] = useState(false);
+  const [avatar, setAvatar] = useState<TowerAvatar | null>(null);
+  const [avatarLoading, setAvatarLoading] = useState(true);
+  const [gotchiName, setGotchiName] = useState("");
+  const [creatingGotchi, setCreatingGotchi] = useState(false);
+  const [pendingJoinCode, setPendingJoinCode] = useState<string | null>(null);
   const [wsStatus, setWsStatus] = useState<"off" | "connecting" | "live" | "fallback">("off");
 
   const floorHostRef = useRef<HTMLDivElement>(null);
@@ -148,14 +156,28 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     if (!user) return;
-    void loadEdgotchi(user.id).then((row) => {
-      if (row) {
-        setVoxels(row.voxels);
-        setGotchiReady(true);
-      } else {
-        setGotchiReady(false);
-      }
-    }).catch(() => setGotchiReady(false));
+    let cancelled = false;
+    setAvatarLoading(true);
+    void loadTowerAvatar(user.id)
+      .then((row) => {
+        if (cancelled) return;
+        if (row) {
+          setAvatar(row);
+          setVoxels(row.voxels);
+          setGotchiName(row.name);
+        } else {
+          setAvatar(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAvatar(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAvatarLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   useEffect(() => {
@@ -167,34 +189,101 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
     };
   }, []);
 
-  async function handleJoin(e?: React.FormEvent, joinCode?: string) {
-    e?.preventDefault();
-    if (!user || joining) return;
-    if (!gotchiReady) {
-      toast.error("Create your EdGotchi first — it becomes your Tower avatar");
+  async function handleSaveAvatar() {
+    if (!user || creatingGotchi) return;
+    setCreatingGotchi(true);
+    try {
+      const row = await saveTowerAvatar(user.id, gotchiName, voxels);
+      setAvatar(row);
+      setVoxels(row.voxels);
+      toast.success("Tower Gotchi saved");
+      if (pendingJoinCode) {
+        const codeToJoin = pendingJoinCode;
+        setPendingJoinCode(null);
+        setScreen("hub");
+        await completeJoin(codeToJoin, row);
+      } else {
+        setScreen("hub");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save Gotchi");
+    } finally {
+      setCreatingGotchi(false);
+    }
+  }
+
+  async function completeJoin(rawCode: string, av?: TowerAvatar | null) {
+    const useAvatar = av ?? avatar;
+    if (!useAvatar) {
+      setPendingJoinCode(rawCode.trim().toUpperCase());
+      setScreen("create");
+      toast.message("Create your Gotchi Tower avatar first");
       return;
     }
     setJoining(true);
     try {
-      const row = await joinTowerByCode(joinCode || code);
+      const row = await joinTowerByCode(rawCode, {
+        gotchiName: useAvatar.name,
+        voxels: useAvatar.voxels,
+      });
       const ev =
         events.find((x) => x.id === row.event_id) ??
         (await getTowerEvent(row.event_id).catch(() => null));
       if (!ev) {
-        toast.error("Joined, but could not load event details");
-        return;
+        // Still enter lobby with minimal event from player row
+        setEvent({
+          id: row.event_id,
+          code: rawCode.trim().toUpperCase(),
+          title: "Gotchi Tower",
+          subject_id: profile?.selected_subject_id || "",
+          created_by: "",
+          difficulty: "mixed",
+          floor_count: 20,
+          player_limit: 30,
+          gcoin_reward: 25,
+          pvp_enabled: true,
+          pvp_wager_min: 0,
+          pvp_wager_max: 50,
+          status: "lobby",
+          theme: "academy",
+          published_at: null,
+          started_at: null,
+          ended_at: null,
+        });
+      } else {
+        setEvent(ev);
       }
-      setEvent(ev);
       setPlayer(row);
-      const list = await listEventPlayers(row.event_id);
-      setPeers(list);
+      setVoxels(row.voxels?.length ? row.voxels : useAvatar.voxels);
+      try {
+        setPeers(await listEventPlayers(row.event_id));
+      } catch {
+        setPeers([row]);
+      }
       setScreen("lobby");
       toast.success("Entered the tower lobby");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not join");
+      const msg = err instanceof Error ? err.message : "Could not join";
+      toast.error(msg.length > 120 ? `${msg.slice(0, 117)}…` : msg);
     } finally {
       setJoining(false);
     }
+  }
+
+  async function handleJoin(e?: React.FormEvent, joinCode?: string) {
+    e?.preventDefault();
+    if (!user || joining) return;
+    const raw = (joinCode || code).trim();
+    if (raw.length < 4) {
+      toast.error("Enter a valid game code");
+      return;
+    }
+    if (!avatar) {
+      setPendingJoinCode(raw.toUpperCase());
+      setScreen("create");
+      return;
+    }
+    await completeJoin(raw);
   }
 
   function connectRealtime(ev: TowerEvent, pl: TowerPlayer) {
@@ -647,7 +736,10 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
           type="button"
           onClick={() => {
             if (screen === "hub") onBack();
-            else if (screen === "floor" || screen === "battle") setScreen("lobby");
+            else if (screen === "create") {
+              setPendingJoinCode(null);
+              setScreen("hub");
+            } else if (screen === "floor" || screen === "battle") setScreen("lobby");
             else setScreen("hub");
           }}
           className="grid h-9 w-9 place-items-center rounded-xl bg-muted"
@@ -679,6 +771,41 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
         )}
       </header>
 
+      {screen === "create" && (
+        <div className="space-y-3">
+          <Panel className="bg-gradient-to-br from-amber-500/15 via-rose-500/10 to-indigo-500/15">
+            <div className="text-sm font-bold">Create your Tower Gotchi</div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Separate from EdGotchi — this avatar is only used inside Gotchi Tower.
+              {pendingJoinCode ? ` Then you will join code ${pendingJoinCode}.` : ""}
+            </p>
+          </Panel>
+          <input
+            value={gotchiName}
+            onChange={(e) => setGotchiName(e.target.value)}
+            placeholder="Gotchi name"
+            maxLength={24}
+            className="w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm font-semibold outline-none focus:border-primary"
+          />
+          <VoxelPainter
+            initial={voxels}
+            onChange={setVoxels}
+            caption="cubes · your Gotchi Tower avatar"
+          />
+          <div className="flex justify-center">
+            <VoxelPreview voxels={voxels} size={10} />
+          </div>
+          <button
+            type="button"
+            disabled={creatingGotchi || gotchiName.trim().length < 2 || voxels.length < 4}
+            onClick={() => void handleSaveAvatar()}
+            className="w-full rounded-2xl py-3 text-sm font-bold gradient-primary text-primary-foreground shadow-glow disabled:opacity-40"
+          >
+            {creatingGotchi ? "Saving…" : pendingJoinCode ? "Save & join tower" : "Save Tower Gotchi"}
+          </button>
+        </div>
+      )}
+
       {screen === "hub" && (
         <div className="space-y-3">
           {!profile?.selected_subject_id && (
@@ -688,11 +815,38 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
               </p>
             </Panel>
           )}
-          {!gotchiReady && (
+
+          {avatarLoading ? (
+            <div className="grid place-items-center py-6 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          ) : avatar ? (
+            <Panel className="flex items-center gap-3">
+              <VoxelPreview voxels={avatar.voxels} size={7} />
+              <div className="min-w-0 flex-1">
+                <div className="font-bold truncate">{avatar.name}</div>
+                <div className="text-[11px] text-muted-foreground">Your Tower Gotchi</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setScreen("create")}
+                className="rounded-xl bg-muted px-3 py-1.5 text-xs font-semibold"
+              >
+                Edit
+              </button>
+            </Panel>
+          ) : (
             <Panel>
-              <p className="text-sm">
-                Create an <strong>EdGotchi</strong> first — your voxel pet is your Tower avatar and companion leader.
+              <p className="text-sm mb-2">
+                Create a <strong>Tower Gotchi</strong> (separate from EdGotchi) before climbing.
               </p>
+              <button
+                type="button"
+                onClick={() => setScreen("create")}
+                className="w-full rounded-xl py-2.5 text-sm font-semibold gradient-primary text-primary-foreground"
+              >
+                Create Tower Gotchi
+              </button>
             </Panel>
           )}
 

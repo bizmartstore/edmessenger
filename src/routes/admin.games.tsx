@@ -251,7 +251,9 @@ function TowerAdmin() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (/gotchi_tower|does not exist|schema cache|PGRST/i.test(msg)) {
-        toast.error("Run SUPABASE_MIGRATION_GOTCHI_TOWER.sql in Supabase first");
+        toast.error(
+          "Run SUPABASE_MIGRATION_GOTCHI_TOWER.sql (and GOTCHI_TOWER_FIX.sql if already installed) in Supabase",
+        );
       } else {
         toast.error(msg);
       }

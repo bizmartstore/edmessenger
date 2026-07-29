@@ -172,6 +172,13 @@ export type CompanionInstance = {
   xp: number;
 };
 
+/** Tower-only avatar — stored in gotchi_tower_avatars, never edgotchis. */
+export type TowerAvatar = {
+  user_id: string;
+  name: string;
+  voxels: Voxel[];
+};
+
 export type TowerPlayer = {
   id: string;
   event_id: string;
@@ -496,19 +503,332 @@ export async function approveAllQuestions(eventId: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function joinTowerByCode(code: string): Promise<TowerPlayer> {
-  const { data, error } = await supabase.rpc("join_gotchi_tower", { p_code: code.trim() });
-  if (error) throw error;
-  return mapPlayer(data as Record<string, unknown>);
+const TOWER_AVATAR_STORAGE_KEY = "educhat.gotchi_tower_avatar";
+
+function cleanRpcError(message: string | undefined, fallback: string): string {
+  const msg = message || fallback;
+  return msg.replace(/^.*ERROR:\s*/i, "").split("\n")[0].trim() || fallback;
+}
+
+function isMissingDbObject(message: string | undefined): boolean {
+  return /does not exist|schema cache|PGRST202|PGRST205|could not find the function|gotchi_tower_avatars/i.test(
+    message || "",
+  );
+}
+
+function readLocalTowerAvatar(userId: string): TowerAvatar | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(`${TOWER_AVATAR_STORAGE_KEY}.${userId}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { name?: string; voxels?: Voxel[] };
+    if (!parsed?.name || !Array.isArray(parsed.voxels) || parsed.voxels.length < 1) return null;
+    return { user_id: userId, name: parsed.name, voxels: parsed.voxels };
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalTowerAvatar(avatar: TowerAvatar): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      `${TOWER_AVATAR_STORAGE_KEY}.${avatar.user_id}`,
+      JSON.stringify({ name: avatar.name, voxels: avatar.voxels }),
+    );
+  } catch {
+    /* ignore quota */
+  }
+}
+
+async function joinTowerClientSide(
+  code: string,
+  opts: { gotchiName: string; voxels: Voxel[] },
+): Promise<TowerPlayer> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not signed in");
+
+  const ev = await getTowerEventByCode(code);
+  if (!ev) {
+    throw new Error(
+      "Invalid game code, or this tower is not open for your selected subject. Check My Account → subject.",
+    );
+  }
+  if (ev.status !== "lobby" && ev.status !== "live") {
+    throw new Error(`This tower is not open for joining (status: ${ev.status})`);
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name, selected_subject_id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (
+    profile?.selected_subject_id &&
+    ev.subject_id &&
+    profile.selected_subject_id !== ev.subject_id
+  ) {
+    throw new Error(
+      "Your selected subject does not match this tower event. Change subject in My Account.",
+    );
+  }
+
+  const displayName =
+    (typeof profile?.full_name === "string" && profile.full_name.trim()) || "Scholar";
+  const gotchiName = opts.gotchiName.trim().slice(0, 24);
+  const voxels = opts.voxels;
+
+  const { data: existing, error: existingErr } = await supabase
+    .from("gotchi_tower_players")
+    .select("*")
+    .eq("event_id", ev.id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (existingErr && !isMissingDbObject(existingErr.message)) throw existingErr;
+
+  if (existing) {
+    const { data: updated, error: updErr } = await supabase
+      .from("gotchi_tower_players")
+      .update({
+        online: true,
+        gotchi_name: gotchiName,
+        voxels,
+        display_name: displayName,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existing.id)
+      .select("*")
+      .single();
+    if (updErr) throw updErr;
+    return mapPlayer(updated as Record<string, unknown>);
+  }
+
+  const { count, error: countErr } = await supabase
+    .from("gotchi_tower_players")
+    .select("*", { count: "exact", head: true })
+    .eq("event_id", ev.id);
+  // Count can 500 under recursive RLS — skip soft capacity check in that case
+  if (!countErr && typeof count === "number" && count >= ev.player_limit) {
+    throw new Error("Tower is full");
+  }
+
+  const { data: inserted, error: insertErr } = await supabase
+    .from("gotchi_tower_players")
+    .insert({
+      event_id: ev.id,
+      user_id: user.id,
+      display_name: displayName,
+      gotchi_name: gotchiName,
+      voxels,
+      companions: [
+        { def_id: "sparkling", level: 1, xp: 0 },
+        { def_id: "leafkin", level: 1, xp: 0 },
+      ],
+      online: true,
+    })
+    .select("*")
+    .single();
+
+  if (insertErr) {
+    // 409 / unique (event_id, user_id) — re-fetch own row
+    if (
+      insertErr.code === "23505" ||
+      /duplicate|conflict|409/i.test(insertErr.message || "")
+    ) {
+      const { data: again, error: againErr } = await supabase
+        .from("gotchi_tower_players")
+        .select("*")
+        .eq("event_id", ev.id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (againErr) throw againErr;
+      if (again) {
+        await supabase
+          .from("gotchi_tower_players")
+          .update({
+            online: true,
+            gotchi_name: gotchiName,
+            voxels,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", again.id);
+        return mapPlayer({
+          ...(again as Record<string, unknown>),
+          gotchi_name: gotchiName,
+          voxels,
+          online: true,
+        });
+      }
+    }
+    throw insertErr;
+  }
+
+  return mapPlayer(inserted as Record<string, unknown>);
+}
+
+export async function joinTowerByCode(
+  code: string,
+  opts?: { gotchiName?: string; voxels?: Voxel[] },
+): Promise<TowerPlayer> {
+  const trimmedCode = code.trim();
+  const gotchiName = opts?.gotchiName?.trim() || null;
+  const voxels = opts?.voxels?.length ? opts.voxels : null;
+
+  // Prefer new RPC (Tower avatar payload). Falls back for DBs that only have join(code).
+  const primary = await supabase.rpc("join_gotchi_tower", {
+    p_code: trimmedCode,
+    p_gotchi_name: gotchiName,
+    p_voxels: voxels,
+  });
+
+  if (!primary.error && primary.data) {
+    return mapPlayer(primary.data as Record<string, unknown>);
+  }
+
+  const primaryMsg = primary.error?.message || "";
+  if (isMissingDbObject(primaryMsg) || /function|PGRST202/i.test(primaryMsg)) {
+    const legacy = await supabase.rpc("join_gotchi_tower", { p_code: trimmedCode });
+    if (!legacy.error && legacy.data) {
+      const row = mapPlayer(legacy.data as Record<string, unknown>);
+      // Old RPC copied EdGotchi — overwrite with Tower Gotchi when we have one
+      if (gotchiName && voxels?.length) {
+        try {
+          await updateTowerPlayer(row.id, {
+            gotchi_name: gotchiName,
+            voxels,
+          } as Partial<TowerPlayer>);
+          return { ...row, gotchi_name: gotchiName, voxels };
+        } catch {
+          return { ...row, gotchi_name: gotchiName, voxels };
+        }
+      }
+      return row;
+    }
+  }
+
+  // Direct insert path (works with insert-own RLS even if RPC is broken)
+  if (gotchiName && voxels?.length) {
+    try {
+      return await joinTowerClientSide(trimmedCode, { gotchiName, voxels });
+    } catch (clientErr) {
+      const rpcMsg = cleanRpcError(primaryMsg, "");
+      if (rpcMsg && !isMissingDbObject(rpcMsg)) {
+        throw new Error(rpcMsg);
+      }
+      throw clientErr instanceof Error
+        ? clientErr
+        : new Error(cleanRpcError(primaryMsg, "Could not join"));
+    }
+  }
+
+  throw new Error(
+    cleanRpcError(primaryMsg, "Could not join") ||
+      "Create your Gotchi Tower avatar first, then try the code again.",
+  );
+}
+
+export async function loadTowerAvatar(userId: string): Promise<TowerAvatar | null> {
+  const { data, error } = await supabase
+    .from("gotchi_tower_avatars")
+    .select("user_id, name, voxels")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    if (isMissingDbObject(error.message)) {
+      return readLocalTowerAvatar(userId);
+    }
+    throw error;
+  }
+  if (!data) return readLocalTowerAvatar(userId);
+  const avatar = {
+    user_id: String(data.user_id),
+    name: String(data.name),
+    voxels: Array.isArray(data.voxels) ? (data.voxels as Voxel[]) : [],
+  };
+  writeLocalTowerAvatar(avatar);
+  return avatar;
+}
+
+export async function saveTowerAvatar(
+  userId: string,
+  name: string,
+  voxels: Voxel[],
+): Promise<TowerAvatar> {
+  const trimmed = name.trim();
+  if (trimmed.length < 2) throw new Error("Name must be at least 2 characters");
+  if (voxels.length < 4) throw new Error("Paint at least a few cubes for your Gotchi");
+
+  const avatar: TowerAvatar = {
+    user_id: userId,
+    name: trimmed.slice(0, 24),
+    voxels,
+  };
+
+  const { data, error } = await supabase
+    .from("gotchi_tower_avatars")
+    .upsert(
+      {
+        user_id: userId,
+        name: avatar.name,
+        voxels,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" },
+    )
+    .select("user_id, name, voxels")
+    .single();
+
+  if (error) {
+    // Table missing until FIX migration — keep Tower Gotchi locally (never touch edgotchis)
+    if (isMissingDbObject(error.message)) {
+      writeLocalTowerAvatar(avatar);
+      return avatar;
+    }
+    throw error;
+  }
+
+  const saved = {
+    user_id: String(data.user_id),
+    name: String(data.name),
+    voxels: Array.isArray(data.voxels) ? (data.voxels as Voxel[]) : [],
+  };
+  writeLocalTowerAvatar(saved);
+  return saved;
 }
 
 export async function listEventPlayers(eventId: string): Promise<TowerPlayer[]> {
+  // Prefer security-definer RPC (avoids recursive RLS 500 on older policies)
+  const rpc = await supabase.rpc("list_gotchi_tower_players", { p_event_id: eventId });
+  if (!rpc.error && Array.isArray(rpc.data)) {
+    return rpc.data.map((r) => mapPlayer(r as Record<string, unknown>));
+  }
+
   const { data, error } = await supabase
     .from("gotchi_tower_players")
     .select("*")
     .eq("event_id", eventId)
     .order("floor", { ascending: false });
-  if (error) throw error;
+
+  if (error) {
+    // Recursive RLS often surfaces as 500 / infinite recursion
+    if (/500|recursion|infinite/i.test(error.message) || error.code === "42P17") {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw error;
+      const own = await supabase
+        .from("gotchi_tower_players")
+        .select("*")
+        .eq("event_id", eventId)
+        .eq("user_id", user.id);
+      if (own.error) throw error;
+      return (own.data ?? []).map((r) => mapPlayer(r as Record<string, unknown>));
+    }
+    throw error;
+  }
   return (data ?? []).map((r) => mapPlayer(r as Record<string, unknown>));
 }
 

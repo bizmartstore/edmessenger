@@ -6,9 +6,15 @@ import { cn } from "@/lib/utils";
 type Props = {
   initial?: Voxel[];
   onChange: (voxels: Voxel[]) => void;
+  /** Defaults to Edgotchi copy; Gotchi Tower can override. */
+  caption?: string;
 };
 
-export function VoxelPainter({ initial = [], onChange }: Props) {
+export function VoxelPainter({
+  initial = [],
+  onChange,
+  caption = "cubes · paint your permanent Edgotchi",
+}: Props) {
   const [voxels, setVoxels] = useState<Voxel[]>(initial);
   const [color, setColor] = useState(0);
   const [erase, setErase] = useState(false);
@@ -100,7 +106,7 @@ export function VoxelPainter({ initial = [], onChange }: Props) {
         })}
       </div>
       <p className="text-center text-[10px] text-muted-foreground">
-        {voxels.length}/{MAX_VOXELS} cubes · paint your permanent Edgotchi
+        {voxels.length}/{MAX_VOXELS} {caption}
       </p>
     </div>
   );
