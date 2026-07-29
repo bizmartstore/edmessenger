@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { useLiveReload } from "@/hooks/useLiveReload";
 import { ClipboardList, CheckCircle2, ArrowRight } from "lucide-react";
+import { SubjectEmptyState } from "@/components/SubjectEmptyState";
 
 export const Route = createFileRoute("/_app/quizzes")({
   component: QuizzesList,
@@ -21,7 +22,8 @@ interface Quiz {
 }
 
 function QuizzesList() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const subjectId = profile?.selected_subject_id ?? null;
   const { markRead } = useUnreadBadges();
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
 
@@ -31,7 +33,11 @@ function QuizzesList() {
 
   const loadQuizzes = useCallback(async () => {
     if (!user) return;
-    const { data: qs } = await supabase.from("quizzes").select("*").eq("published", true).order("created_at", { ascending: false });
+    if (!subjectId) {
+      setQuizzes([]);
+      return;
+    }
+    const { data: qs } = await supabase.from("quizzes").select("*").eq("published", true).eq("subject_id", subjectId).order("created_at", { ascending: false });
     const list = (qs ?? []) as Quiz[];
     const ids = list.map((q) => q.id);
     if (ids.length === 0) {
@@ -45,7 +51,7 @@ function QuizzesList() {
     const attMap = new Map<string, number | null>();
     (attempts ?? []).forEach((a: { quiz_id: string; score: number | null }) => attMap.set(a.quiz_id, a.score));
     setQuizzes(list.map((q) => ({ ...q, question_count: countMap.get(q.id) ?? 0, attempted: attMap.has(q.id), score: attMap.get(q.id) ?? null })));
-  }, [user]);
+  }, [user, subjectId]);
 
   useEffect(() => {
     void loadQuizzes();
@@ -69,12 +75,14 @@ function QuizzesList() {
       </header>
 
       <div className="mt-5 space-y-3">
-        {quizzes.length === 0 && (
+        {!subjectId ? (
+          <SubjectEmptyState label="quizzes" />
+        ) : quizzes.length === 0 ? (
           <div className="text-center py-12 text-sm text-muted-foreground rounded-2xl bg-card border border-dashed border-border">
-            No quizzes available yet.
+            No quizzes for your subject yet.
           </div>
-        )}
-        {quizzes.map((q) => (
+        ) : null}
+        {subjectId && quizzes.map((q) => (
           <Link
             key={q.id}
             to="/quizzes/$id"

@@ -6,6 +6,7 @@ import { useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { useLiveReload } from "@/hooks/useLiveReload";
 import { FolderKanban, ChevronRight, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
+import { SubjectEmptyState } from "@/components/SubjectEmptyState";
 
 export const Route = createFileRoute("/_app/activities")({
   component: ActivitiesPage,
@@ -20,7 +21,8 @@ interface Activity {
 }
 
 function ActivitiesPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const subjectId = profile?.selected_subject_id ?? null;
   const { markRead } = useUnreadBadges();
   const [items, setItems] = useState<Activity[]>([]);
   const [submitted, setSubmitted] = useState<Set<string>>(new Set());
@@ -31,13 +33,18 @@ function ActivitiesPage() {
 
   const loadActivities = useCallback(async () => {
     if (!user) return;
+    if (!subjectId) {
+      setItems([]);
+      setSubmitted(new Set());
+      return;
+    }
     const [{ data }, { data: subs }] = await Promise.all([
-      supabase.from("activities").select("id, title, description, due_at, created_at").order("created_at", { ascending: false }).limit(50),
+      supabase.from("activities").select("id, title, description, due_at, created_at").eq("subject_id", subjectId).order("created_at", { ascending: false }).limit(50),
       supabase.from("activity_submissions").select("activity_id").eq("user_id", user.id),
     ]);
     setItems((data ?? []) as Activity[]);
     setSubmitted(new Set((subs ?? []).map((s: { activity_id: string }) => s.activity_id)));
-  }, [user]);
+  }, [user, subjectId]);
 
   useEffect(() => {
     void loadActivities();
@@ -60,10 +67,11 @@ function ActivitiesPage() {
         </div>
       </header>
 
-      {items.length === 0 && (
-        <div className="text-center text-xs text-muted-foreground py-12">No activities yet.</div>
-      )}
-
+      {!subjectId ? (
+        <SubjectEmptyState label="activities" />
+      ) : items.length === 0 ? (
+        <div className="text-center text-xs text-muted-foreground py-12">No activities for your subject yet.</div>
+      ) : (
       <div className="space-y-3">
         {items.map((a) => {
           const done = submitted.has(a.id);
@@ -89,6 +97,7 @@ function ActivitiesPage() {
           );
         })}
       </div>
+      )}
     </div>
   );
 }

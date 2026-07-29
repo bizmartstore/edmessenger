@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import { AttachmentList } from "@/components/AttachmentList";
 import type { UploadedFile } from "@/lib/upload";
 import { notifyRole } from "@/lib/push";
+import { AdminSubjectSelect } from "@/components/AdminSubjectSelect";
 
 export const Route = createFileRoute("/admin/activities")({
   component: AdminActivities,
@@ -36,6 +37,7 @@ function AdminActivities() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [due, setDue] = useState("");
+  const [subjectId, setSubjectId] = useState("");
   const [busy, setBusy] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [subs, setSubs] = useState<SubRow[]>([]);
@@ -56,6 +58,10 @@ function AdminActivities() {
   async function create(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || busy) return;
+    if (!subjectId) {
+      toast.error("Select a subject");
+      return;
+    }
     setBusy(true);
     try {
       const { error } = await supabase.from("activities").insert({
@@ -63,6 +69,7 @@ function AdminActivities() {
         description: description.trim(),
         due_at: due ? new Date(due).toISOString() : null,
         created_by: user?.id ?? null,
+        subject_id: subjectId,
       });
       if (error) throw error;
       notifyRole("student", "New activity", title.trim(), "/activities");
@@ -137,6 +144,7 @@ function AdminActivities() {
           onChange={(e) => setDue(e.target.value)}
           className="w-full px-3 py-2 rounded-xl bg-muted border border-border outline-none text-sm"
         />
+        <AdminSubjectSelect value={subjectId} onChange={setSubjectId} required />
         <button
           type="submit"
           disabled={busy || !title.trim()}

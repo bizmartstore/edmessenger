@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Plus, Trash2, ChevronDown, ChevronUp, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
+import { AdminSubjectSelect } from "@/components/AdminSubjectSelect";
 
 export const Route = createFileRoute("/admin/quizzes")({
   component: AdminQuizzes,
@@ -16,6 +17,7 @@ function AdminQuizzes() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [questions, setQuestions] = useState<Record<string, Q[]>>({});
   const [newTitle, setNewTitle] = useState(""); const [newDesc, setNewDesc] = useState("");
+  const [newSubjectId, setNewSubjectId] = useState("");
 
   async function load() {
     const { data } = await supabase.from("quizzes").select("*").order("created_at", { ascending: false });
@@ -31,9 +33,13 @@ function AdminQuizzes() {
   async function createQuiz(e: React.FormEvent) {
     e.preventDefault();
     if (!newTitle.trim()) return;
-    const { error } = await supabase.from("quizzes").insert({ title: newTitle, description: newDesc || null });
+    if (!newSubjectId) {
+      toast.error("Select a subject");
+      return;
+    }
+    const { error } = await supabase.from("quizzes").insert({ title: newTitle, description: newDesc || null, subject_id: newSubjectId });
     if (error) return toast.error(error.message);
-    setNewTitle(""); setNewDesc(""); load();
+    setNewTitle(""); setNewDesc(""); setNewSubjectId(""); load();
     toast.success("Quiz created");
   }
 
@@ -81,6 +87,7 @@ function AdminQuizzes() {
         <div className="font-semibold text-sm">New quiz</div>
         <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Title" className="w-full px-3 py-2 rounded-xl bg-muted border border-border outline-none text-sm" />
         <input value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Description (optional)" className="w-full px-3 py-2 rounded-xl bg-muted border border-border outline-none text-sm" />
+        <AdminSubjectSelect value={newSubjectId} onChange={setNewSubjectId} required />
         <button className="w-full py-2.5 rounded-xl gradient-primary text-primary-foreground text-sm font-semibold flex items-center justify-center gap-1.5">
           <Plus className="h-4 w-4" /> Create quiz
         </button>

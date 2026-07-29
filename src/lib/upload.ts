@@ -196,6 +196,29 @@ export async function uploadToBucket(
   };
 }
 
+/** Upload or replace a private group profile picture (owner only). */
+export async function uploadGroupAvatar(groupId: string, file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Please choose an image");
+  }
+  const processed = await compressImage(file);
+  const path = `${groupId}/avatar.webp`;
+  const { error } = await supabase.storage.from("group-avatars").upload(path, processed, {
+    cacheControl: "86400",
+    upsert: true,
+    contentType: processed.type || "image/webp",
+  });
+  if (error) throw error;
+  const { data: pub } = supabase.storage.from("group-avatars").getPublicUrl(path);
+  const url = `${pub.publicUrl}?v=${Date.now()}`;
+  const { error: rpcErr } = await supabase.rpc("update_group_avatar", {
+    p_group: groupId,
+    p_url: url,
+  });
+  if (rpcErr) throw rpcErr;
+  return url;
+}
+
 export function humanSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;

@@ -19,6 +19,7 @@ export interface Profile {
   avatar_url: string | null;
   school?: string | null;
   contact_number?: string | null;
+  selected_subject_id?: string | null;
   created_at?: string;
   updated_at?: string;
 }

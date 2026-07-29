@@ -12,6 +12,7 @@ import {
   X,
   Reply,
   ClipboardList,
+  Camera,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
@@ -20,6 +21,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { MessageComposer, type ReplyTarget } from "@/components/MessageComposer";
 import { AttachmentList } from "@/components/AttachmentList";
 import type { UploadedFile } from "@/lib/upload";
+import { uploadGroupAvatar } from "@/lib/upload";
 import {
   appendGroupCache,
   getGroupCache,
@@ -48,6 +50,7 @@ interface GroupInfo {
   name: string;
   description: string | null;
   has_password: boolean;
+  avatar_url?: string | null;
   member_count: number;
   is_member: boolean;
   created_by?: string;
@@ -93,6 +96,8 @@ function GroupChatPage() {
   const [viewersFor, setViewersFor] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
   const [quizOpen, setQuizOpen] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const avatarRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const bubbleId = wallet.cosmetics.active_bubble;
   const groupBg = chatBackgroundStyle(wallet.cosmetics.bg_group);
@@ -299,6 +304,35 @@ function GroupChatPage() {
     navigate({ to: "/chat" });
   }
 
+  async function onGroupAvatar(file: File | undefined) {
+    if (!file || !user || !info || info.created_by !== user.id) return;
+    setAvatarUploading(true);
+    try {
+      const url = await uploadGroupAvatar(groupId, file);
+      setInfo((prev) => (prev ? { ...prev, avatar_url: url } : prev));
+      toast.success("Group photo updated");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setAvatarUploading(false);
+    }
+  }
+
+  const isOwner = Boolean(user && info?.created_by === user.id);
+
+  function GroupAvatar({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
+    const cls = size === "lg" ? "h-14 w-14 rounded-2xl" : size === "sm" ? "h-9 w-9 rounded-xl" : "h-11 w-11 rounded-2xl";
+    const iconCls = size === "lg" ? "h-7 w-7" : size === "sm" ? "h-4 w-4" : "h-5 w-5";
+    if (info?.avatar_url) {
+      return <img src={info.avatar_url} alt="" className={`${cls} object-cover shrink-0 shadow-soft`} />;
+    }
+    return (
+      <div className={`${cls} bg-gradient-to-br from-teal-400 to-emerald-600 grid place-items-center text-white shrink-0 shadow-soft`}>
+        <UsersRound className={iconCls} />
+      </div>
+    );
+  }
+
   async function send(text: string, attachments: UploadedFile[], reply?: ReplyTarget | null) {
     if (!user) return;
     const { data, error } = await supabase
@@ -436,9 +470,7 @@ function GroupChatPage() {
           <div className="font-semibold text-sm">Join group</div>
         </header>
         <div className="rounded-3xl border border-border bg-card shadow-card p-6 text-center space-y-3">
-          <div className="mx-auto h-14 w-14 rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-600 grid place-items-center text-white shadow-glow">
-            <UsersRound className="h-7 w-7" />
-          </div>
+          <GroupAvatar size="lg" />
           <div className="font-extrabold text-lg">{info.name}</div>
           {info.description && <p className="text-sm text-muted-foreground">{info.description}</p>}
           <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
@@ -476,9 +508,29 @@ function GroupChatPage() {
         <Link to="/chat" className="p-2 -ml-2 rounded-xl hover:bg-muted">
           <ArrowLeft className="h-5 w-5" />
         </Link>
-        <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-teal-400 to-emerald-600 grid place-items-center text-white shrink-0">
-          <UsersRound className="h-4 w-4" />
-        </div>
+        {isOwner ? (
+          <button
+            type="button"
+            disabled={avatarUploading}
+            onClick={() => avatarRef.current?.click()}
+            className="relative shrink-0 group"
+            title="Change group photo"
+          >
+            <GroupAvatar size="sm" />
+            <span className="absolute -bottom-0.5 -right-0.5 h-5 w-5 rounded-full bg-card border border-border shadow grid place-items-center group-hover:bg-muted">
+              <Camera className="h-2.5 w-2.5 text-primary" />
+            </span>
+          </button>
+        ) : (
+          <GroupAvatar size="sm" />
+        )}
+        <input
+          ref={avatarRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => void onGroupAvatar(e.target.files?.[0])}
+        />
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-sm truncate flex items-center gap-1">
             {info?.name ?? "Group"}

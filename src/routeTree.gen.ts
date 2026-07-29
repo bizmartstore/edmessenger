@@ -33,6 +33,7 @@ import { Route as AdminGcoinsRouteImport } from './routes/admin.gcoins'
 import { Route as AdminLessonsRouteImport } from './routes/admin.lessons'
 import { Route as AdminQuizzesRouteImport } from './routes/admin.quizzes'
 import { Route as AdminStudentsRouteImport } from './routes/admin.students'
+import { Route as AdminSubjectsRouteImport } from './routes/admin.subjects'
 import { Route as AppActivitiesIdRouteImport } from './routes/_app.activities.$id'
 import { Route as AppDmPeerIdRouteImport } from './routes/_app.dm.$peerId'
 import { Route as AppGroupGroupIdRouteImport } from './routes/_app.group.$groupId'
@@ -158,6 +159,11 @@ const AdminStudentsRoute = AdminStudentsRouteImport.update({
   path: '/students',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminSubjectsRoute = AdminSubjectsRouteImport.update({
+  id: '/subjects',
+  path: '/subjects',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AppActivitiesIdRoute = AppActivitiesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -207,6 +213,7 @@ export interface FileRoutesByFullPath {
   '/admin/lessons': typeof AdminLessonsRoute
   '/admin/quizzes': typeof AdminQuizzesRoute
   '/admin/students': typeof AdminStudentsRoute
+  '/admin/subjects': typeof AdminSubjectsRoute
   '/admin/': typeof AdminIndexRoute
   '/activities/$id': typeof AppActivitiesIdRoute
   '/dm/$peerId': typeof AppDmPeerIdRoute
@@ -235,6 +242,7 @@ export interface FileRoutesByTo {
   '/admin/lessons': typeof AdminLessonsRoute
   '/admin/quizzes': typeof AdminQuizzesRoute
   '/admin/students': typeof AdminStudentsRoute
+  '/admin/subjects': typeof AdminSubjectsRoute
   '/': typeof AppIndexRoute
   '/admin': typeof AdminIndexRoute
   '/activities/$id': typeof AppActivitiesIdRoute
@@ -300,6 +308,7 @@ export interface FileRouteTypes {
     | '/admin/lessons'
     | '/admin/quizzes'
     | '/admin/students'
+    | '/admin/subjects'
     | '/admin/'
     | '/activities/$id'
     | '/dm/$peerId'
@@ -328,6 +337,7 @@ export interface FileRouteTypes {
     | '/admin/lessons'
     | '/admin/quizzes'
     | '/admin/students'
+    | '/admin/subjects'
     | '/'
     | '/admin'
     | '/activities/$id'
@@ -359,6 +369,7 @@ export interface FileRouteTypes {
     | '/admin/lessons'
     | '/admin/quizzes'
     | '/admin/students'
+    | '/admin/subjects'
     | '/_app/'
     | '/admin/'
     | '/_app/activities/$id'
@@ -544,6 +555,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminStudentsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/subjects': {
+      id: '/admin/subjects'
+      path: '/subjects'
+      fullPath: '/admin/subjects'
+      preLoaderRoute: typeof AdminSubjectsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/_app/activities/$id': {
       id: '/_app/activities/$id'
       path: '/$id'
@@ -651,6 +669,7 @@ interface AdminRouteChildren {
   AdminLessonsRoute: typeof AdminLessonsRoute
   AdminQuizzesRoute: typeof AdminQuizzesRoute
   AdminStudentsRoute: typeof AdminStudentsRoute
+  AdminSubjectsRoute: typeof AdminSubjectsRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
@@ -665,6 +684,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminLessonsRoute: AdminLessonsRoute,
   AdminQuizzesRoute: AdminQuizzesRoute,
   AdminStudentsRoute: AdminStudentsRoute,
+  AdminSubjectsRoute: AdminSubjectsRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 

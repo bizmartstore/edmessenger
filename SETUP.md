@@ -17,6 +17,7 @@ Supabase: `https://ijxoffbsedvcqbqeohju.supabase.co`
 11. Then run **`SUPABASE_MIGRATION_CHAT_FEEDBACK_GROUP_QUIZ.sql`** (classroom reactions, group quizzes, app feedback)
 12. Then run **`SUPABASE_MIGRATION_EDGOTCHI.sql`** (Edgotchi virtual pet — one compact row per student)
 13. Then run **`SUPABASE_MIGRATION_GAMES_PASSWORD.sql`** (optional admin password lock for Games / Edgotchi)
+14. Then run **`SUPABASE_MIGRATION_SUBJECTS.sql`** (admin subjects with optional password, subject filtering, group avatars)
 
 Primary admin emails (auto-admin, Student/Admin toggle):
 - `sheethappenswithjaa@gmail.com`

@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, useNavigate, Link, useLocation } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { LayoutDashboard, ClipboardList, BookOpen, CalendarCheck, Users, ArrowLeft, UserRound, Megaphone, FolderKanban, Images, Lightbulb, Gamepad2, Coins } from "lucide-react";
+import { LayoutDashboard, ClipboardList, BookOpen, CalendarCheck, Users, ArrowLeft, UserRound, Megaphone, FolderKanban, Images, Lightbulb, Gamepad2, Coins, BookMarked } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin")({
@@ -12,6 +12,7 @@ export const Route = createFileRoute("/admin")({
 const nav = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/admin/banners", label: "Banners", icon: Images },
+  { to: "/admin/subjects", label: "Subjects", icon: BookMarked },
   { to: "/admin/announcements", label: "Announce", icon: Megaphone },
   { to: "/admin/activities", label: "Activities", icon: FolderKanban },
   { to: "/admin/quizzes", label: "Quizzes", icon: ClipboardList },

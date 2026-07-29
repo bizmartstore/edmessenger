@@ -5,10 +5,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { uploadToBucket, humanSize } from "@/lib/upload";
 import { buildFullName, getInitials, splitStoredName } from "@/lib/profile-name";
 import { toast } from "sonner";
-import { ArrowLeft, Camera, CheckCircle2, ClipboardList, Coins, FolderKanban, Save } from "lucide-react";
+import { ArrowLeft, Camera, CheckCircle2, ClipboardList, Coins, FolderKanban, Save, BookMarked, Lock } from "lucide-react";
 import { NotificationStatusCard } from "@/components/NotificationStatusCard";
 import { formatDistanceToNow } from "date-fns";
 import { useGcoins } from "@/hooks/useGcoins";
+import { listSubjects, selectSubject, type Subject } from "@/lib/subjects";
 
 export const Route = createFileRoute("/_app/profile")({
   component: ProfilePage,
@@ -41,6 +42,10 @@ function ProfilePage() {
   const [uploading, setUploading] = useState(false);
   const [quizzes, setQuizzes] = useState<QuizRow[]>([]);
   const [activities, setActivities] = useState<ActivityRow[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [subjectPassword, setSubjectPassword] = useState("");
+  const [pickingSubject, setPickingSubject] = useState<string | null>(null);
+  const [subjectBusy, setSubjectBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -53,6 +58,12 @@ function ProfilePage() {
     setContact(profile.contact_number ?? "");
     setAvatarUrl(profile.avatar_url);
   }, [profile]);
+
+  useEffect(() => {
+    void listSubjects()
+      .then(setSubjects)
+      .catch(() => setSubjects([]));
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -100,6 +111,34 @@ function ProfilePage() {
     }
   }
 
+    })();
+  }, [user]);
+
+  async function pickSubject(subject: Subject) {
+    if (subjectBusy) return;
+    if (subject.has_password && pickingSubject !== subject.id) {
+      setPickingSubject(subject.id);
+      setSubjectPassword("");
+      return;
+    }
+    setSubjectBusy(true);
+    try {
+      const ok = await selectSubject(subject.id, subject.has_password ? subjectPassword : null);
+      if (!ok) {
+        toast.error("Incorrect password — could not select this subject");
+        return;
+      }
+      setPickingSubject(null);
+      setSubjectPassword("");
+      await refresh();
+      toast.success(`Subject set to ${subject.name}`);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Could not select subject");
+    } finally {
+      setSubjectBusy(false);
+    }
+  }
+
   async function save() {
     if (!user) return;
     const nextLast = lastName.trim().toUpperCase();
@@ -140,6 +179,8 @@ function ProfilePage() {
     last_name: lastName,
     full_name: display?.full_name,
   });
+
+  const selectedSubject = subjects.find((s) => s.id === display?.selected_subject_id) ?? null;
 
   return (
     <div className="max-w-md mx-auto px-5 pt-4 pb-8 md:max-w-3xl md:w-full md:px-0">
@@ -212,6 +253,83 @@ function ProfilePage() {
           </Link>
         </div>
       </div>
+
+      <section className="mb-4 rounded-2xl bg-card border border-border p-4 shadow-card space-y-3">
+        <div className="flex items-center gap-2">
+          <BookMarked className="h-4 w-4 text-primary" />
+          <div>
+            <div className="text-sm font-semibold">My subject</div>
+            <div className="text-[10px] text-muted-foreground">
+              Lessons, quizzes &amp; activities show only for your selected subject
+            </div>
+          </div>
+        </div>
+        {selectedSubject ? (
+          <div className="rounded-xl bg-primary/10 border border-primary/20 px-3 py-2.5 flex items-center gap-2">
+            <span className="text-sm font-bold text-primary">{selectedSubject.name}</span>
+            {selectedSubject.has_password && <Lock className="h-3 w-3 text-amber-600" />}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No subject selected yet — pick one below.</p>
+        )}
+        {subjects.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-2">No subjects available yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {subjects.map((s) => {
+              const isSelected = display?.selected_subject_id === s.id;
+              const isPicking = pickingSubject === s.id;
+              return (
+                <div key={s.id} className="rounded-xl border border-border overflow-hidden">
+                  <button
+                    type="button"
+                    disabled={subjectBusy || isSelected}
+                    onClick={() => void pickSubject(s)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
+                      isSelected ? "bg-emerald-500/10" : "hover:bg-muted/60"
+                    } disabled:opacity-60`}
+                  >
+                    <div className="h-8 w-8 rounded-lg gradient-primary grid place-items-center text-primary-foreground text-xs font-bold shrink-0">
+                      {s.name.slice(0, 2)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold">{s.name}</div>
+                      <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        {s.has_password && <Lock className="h-3 w-3 text-amber-500" />}
+                        {s.has_password ? "Password required" : "Open subject"}
+                      </div>
+                    </div>
+                    {isSelected && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />}
+                  </button>
+                  {isPicking && s.has_password && (
+                    <div className="px-3 pb-3 flex gap-2 border-t border-border pt-2">
+                      <input
+                        type="password"
+                        value={subjectPassword}
+                        onChange={(e) => setSubjectPassword(e.target.value)}
+                        placeholder="Enter subject password"
+                        className="flex-1 px-3 py-2 rounded-xl bg-muted border border-border text-sm outline-none focus:border-primary"
+                        autoComplete="current-password"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void pickSubject(s);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={subjectBusy || !subjectPassword.trim()}
+                        onClick={() => void pickSubject(s)}
+                        className="px-3 py-2 rounded-xl gradient-primary text-primary-foreground text-xs font-semibold disabled:opacity-40"
+                      >
+                        {subjectBusy ? "…" : "Confirm"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <div className="space-y-3 rounded-2xl bg-card border border-border p-4 shadow-card">
         <label className="block">

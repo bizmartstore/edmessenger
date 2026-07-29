@@ -65,6 +65,7 @@ interface GroupPreview {
   name: string;
   description: string | null;
   has_password: boolean;
+  avatar_url: string | null;
   created_by: string;
   created_at: string;
   member_count: number;
@@ -754,9 +755,13 @@ function ChatPage() {
           {groups.map((g) => (
             <div key={g.id} className="rounded-2xl bg-card border border-border shadow-card p-3.5 space-y-2.5">
               <div className="flex items-start gap-3">
+                {g.avatar_url ? (
+                  <img src={g.avatar_url} alt="" className="h-11 w-11 rounded-2xl object-cover shrink-0 shadow-soft" />
+                ) : (
                 <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-teal-400 to-emerald-600 grid place-items-center text-white shrink-0 shadow-soft">
                   <UsersRound className="h-5 w-5" />
                 </div>
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <div className="font-semibold text-sm truncate">{g.name}</div>

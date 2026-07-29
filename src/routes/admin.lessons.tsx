@@ -21,6 +21,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { notifyRole } from "@/lib/push";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AdminSubjectSelect } from "@/components/AdminSubjectSelect";
 
 export const Route = createFileRoute("/admin/lessons")({
   component: AdminLessons,
@@ -71,6 +72,7 @@ function AdminLessons() {
   // Materials
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
+  const [subjectId, setSubjectId] = useState("");
   const [busy, setBusy] = useState(false);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -82,6 +84,7 @@ function AdminLessons() {
   const [questions, setQuestions] = useState<Record<string, ReviewerQ[]>>({});
   const [revTitle, setRevTitle] = useState("");
   const [revDesc, setRevDesc] = useState("");
+  const [revSubjectId, setRevSubjectId] = useState("");
   const [revLessonId, setRevLessonId] = useState<string>("");
   const [createMode, setCreateMode] = useState<"paste" | "ai">("paste");
   const [pasteText, setPasteText] = useState("");
@@ -113,6 +116,10 @@ function AdminLessons() {
   async function upload(e: React.FormEvent) {
     e.preventDefault();
     if (!user || !file || !title.trim()) return;
+    if (!subjectId) {
+      toast.error("Select a subject");
+      return;
+    }
     setBusy(true);
     try {
       const up = await uploadToBucket("lessons", file, user.id);
@@ -123,6 +130,7 @@ function AdminLessons() {
         file_name: up.name,
         file_size: up.size,
         uploaded_by: user.id,
+        subject_id: subjectId,
       });
       if (error) throw error;
       notifyRole("student", "New lesson", title.trim(), "/lessons");
@@ -188,6 +196,10 @@ function AdminLessons() {
   async function createReviewer(e: React.FormEvent) {
     e.preventDefault();
     if (!user || !revTitle.trim()) return;
+    if (!revSubjectId) {
+      toast.error("Select a subject");
+      return;
+    }
     if (draftQs.length === 0) {
       toast.error("Add at least one question (paste or generate with AI)");
       return;
@@ -205,6 +217,7 @@ function AdminLessons() {
           title: revTitle.trim(),
           description: revDesc.trim() || null,
           lesson_id: revLessonId || null,
+          subject_id: revSubjectId,
           published: true,
           created_by: user.id,
         })
@@ -316,6 +329,10 @@ function AdminLessons() {
               placeholder="Description (optional)"
               className="w-full px-3 py-2 rounded-xl bg-muted border border-border outline-none text-sm"
             />
+            <label className="block">
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Subject</span>
+              <AdminSubjectSelect value={subjectId} onChange={setSubjectId} required className="mt-1 w-full px-3 py-2 rounded-xl bg-muted border border-border outline-none text-sm focus:border-primary" />
+            </label>
             <input
               ref={fileRef}
               type="file"
@@ -376,6 +393,10 @@ function AdminLessons() {
               placeholder="Description (optional)"
               className="w-full px-3 py-2 rounded-xl bg-muted border border-border outline-none text-sm"
             />
+            <label className="block">
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Subject</span>
+              <AdminSubjectSelect value={revSubjectId} onChange={setRevSubjectId} required className="mt-1 w-full px-3 py-2 rounded-xl bg-muted border border-border outline-none text-sm focus:border-primary" />
+            </label>
             <select
               value={revLessonId}
               onChange={(e) => setRevLessonId(e.target.value)}

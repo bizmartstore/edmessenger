@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { useGcoins } from "@/hooks/useGcoins";
 import { utcDayKey } from "@/lib/gcoins";
+import { SubjectEmptyState } from "@/components/SubjectEmptyState";
 
 const lessonsSearchSchema = z.object({
   tab: z.enum(["materials", "reviewers"]).optional().catch(undefined),
@@ -50,12 +51,13 @@ interface Reviewer {
 }
 
 function LessonsPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { earn } = useGcoins();
   const { markRead } = useUnreadBadges();
   const navigate = Route.useNavigate();
   const { tab: tabFromSearch } = Route.useSearch();
   const tab = tabFromSearch === "reviewers" ? "reviewers" : "materials";
+  const subjectId = profile?.selected_subject_id ?? null;
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [reviewers, setReviewers] = useState<Reviewer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,16 +69,26 @@ function LessonsPage() {
   }, [markRead]);
 
   const loadLessons = useCallback(async () => {
-    const { data } = await supabase.from("lessons").select("*").order("created_at", { ascending: false });
+    if (!subjectId) {
+      setLessons([]);
+      setLoading(false);
+      return;
+    }
+    const { data } = await supabase.from("lessons").select("*").eq("subject_id", subjectId).order("created_at", { ascending: false });
     setLessons((data ?? []) as Lesson[]);
     setLoading(false);
-  }, []);
+  }, [subjectId]);
 
   const loadReviewers = useCallback(async () => {
+    if (!subjectId) {
+      setReviewers([]);
+      return;
+    }
     const { data: rs } = await supabase
       .from("reviewers")
       .select("*")
       .eq("published", true)
+      .eq("subject_id", subjectId)
       .order("created_at", { ascending: false });
     const list = (rs ?? []) as Reviewer[];
     const ids = list.map((r) => r.id);
@@ -110,7 +122,7 @@ function LessonsPage() {
         score: attMap.get(r.id) ?? null,
       })),
     );
-  }, [user]);
+  }, [user, subjectId]);
 
   useEffect(() => {
     void loadLessons();
@@ -204,10 +216,14 @@ function LessonsPage() {
         </TabsList>
 
         <TabsContent value="materials" className="mt-4 space-y-3">
+          {!subjectId ? (
+            <SubjectEmptyState label="lesson materials" />
+          ) : (
+            <>
           {loading && <div className="text-xs text-muted-foreground">Loading…</div>}
           {!loading && lessons.length === 0 && (
             <div className="text-center py-12 text-sm text-muted-foreground rounded-2xl bg-card border border-dashed border-border">
-              No lessons uploaded yet.
+              No lessons for your subject yet.
             </div>
           )}
           {lessons.map((l) => (
@@ -249,12 +265,18 @@ function LessonsPage() {
               </div>
             </div>
           ))}
+            </>
+          )}
         </TabsContent>
 
         <TabsContent value="reviewers" className="mt-4 space-y-3">
+          {!subjectId ? (
+            <SubjectEmptyState label="lesson reviewers" />
+          ) : (
+            <>
           {reviewers.length === 0 && (
             <div className="text-center py-12 text-sm text-muted-foreground rounded-2xl bg-card border border-dashed border-border">
-              No reviewers available yet.
+              No reviewers for your subject yet.
             </div>
           )}
           {reviewers.map((r) => (
@@ -296,6 +318,8 @@ function LessonsPage() {
               </div>
             </Link>
           ))}
+            </>
+          )}
         </TabsContent>
       </Tabs>
     </div>
