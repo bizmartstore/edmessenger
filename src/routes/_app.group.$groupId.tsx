@@ -310,6 +310,8 @@ function GroupChatPage() {
     try {
       const url = await uploadGroupAvatar(groupId, file);
       setInfo((prev) => (prev ? { ...prev, avatar_url: url } : prev));
+      // Refresh list metadata so Groups tab shows the new photo
+      void loadInfo();
       toast.success("Group photo updated");
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Upload failed");
@@ -321,13 +323,27 @@ function GroupChatPage() {
   const isOwner = Boolean(user && info?.created_by === user.id);
 
   function GroupAvatar({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
-    const cls = size === "lg" ? "h-14 w-14 rounded-2xl" : size === "sm" ? "h-9 w-9 rounded-xl" : "h-11 w-11 rounded-2xl";
+    const cls =
+      size === "lg"
+        ? "h-14 w-14 rounded-2xl"
+        : size === "sm"
+          ? "h-9 w-9 rounded-xl"
+          : "h-11 w-11 rounded-2xl";
     const iconCls = size === "lg" ? "h-7 w-7" : size === "sm" ? "h-4 w-4" : "h-5 w-5";
     if (info?.avatar_url) {
-      return <img src={info.avatar_url} alt="" className={`${cls} object-cover shrink-0 shadow-soft`} />;
+      return (
+        <img
+          key={info.avatar_url}
+          src={info.avatar_url}
+          alt=""
+          className={`${cls} object-cover shrink-0 shadow-soft bg-muted`}
+        />
+      );
     }
     return (
-      <div className={`${cls} bg-gradient-to-br from-teal-400 to-emerald-600 grid place-items-center text-white shrink-0 shadow-soft`}>
+      <div
+        className={`${cls} bg-gradient-to-br from-teal-400 to-emerald-600 grid place-items-center text-white shrink-0 shadow-soft`}
+      >
         <UsersRound className={iconCls} />
       </div>
     );

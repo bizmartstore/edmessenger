@@ -256,6 +256,397 @@ export function xpToNextLevel(level: number): number {
 /** Cost in tower-earned GCoins to redesign an existing Tower Gotchi. */
 export const GOTCHI_EDIT_COST = 25;
 
+// ── Classes, builds & skills ────────────────────────────────────────────────
+
+export type GotchiClassId = "scholar" | "guardian" | "striker" | "mystic" | "harmonist";
+export type GotchiBuildId = "offense" | "defense" | "support" | "balanced";
+
+export type TowerSkillId =
+  | "basic_strike"
+  | "focus_bolt"
+  | "tome_burst"
+  | "shield_bash"
+  | "iron_ward"
+  | "bulwark"
+  | "swift_cut"
+  | "power_slash"
+  | "execute"
+  | "arc_spark"
+  | "spirit_lance"
+  | "nova"
+  | "mend"
+  | "harmony_pulse"
+  | "blessing";
+
+export type TowerSkillDef = {
+  id: TowerSkillId;
+  name: string;
+  classId: GotchiClassId;
+  unlockLevel: number;
+  kind: "attack" | "heal" | "buff";
+  /** Multiplier vs derived skillPower / healPower */
+  power: number;
+  energyCost: number;
+  vfx: "slash" | "bolt" | "burst" | "shield" | "spark" | "lance" | "nova" | "heal" | "bless";
+  blurb: string;
+};
+
+export const GOTCHI_CLASSES: Record<
+  GotchiClassId,
+  { id: GotchiClassId; name: string; blurb: string; color: string }
+> = {
+  scholar: {
+    id: "scholar",
+    name: "Scholar",
+    blurb: "Quiz mastery · knowledge strikes",
+    color: "text-indigo-700 bg-indigo-500/15",
+  },
+  guardian: {
+    id: "guardian",
+    name: "Guardian",
+    blurb: "Sturdy wards · shield bash",
+    color: "text-sky-800 bg-sky-500/15",
+  },
+  striker: {
+    id: "striker",
+    name: "Striker",
+    blurb: "Fast cuts · high crit damage",
+    color: "text-rose-800 bg-rose-500/15",
+  },
+  mystic: {
+    id: "mystic",
+    name: "Mystic",
+    blurb: "Arcane bolts · spirit nova",
+    color: "text-violet-800 bg-violet-500/15",
+  },
+  harmonist: {
+    id: "harmonist",
+    name: "Harmonist",
+    blurb: "Heals · team support energy",
+    color: "text-emerald-800 bg-emerald-500/15",
+  },
+};
+
+export const GOTCHI_BUILDS: Record<
+  GotchiBuildId,
+  {
+    id: GotchiBuildId;
+    name: string;
+    blurb: string;
+    /** Applied in PvE / PvP */
+    pve: { dmg: number; def: number; heal: number };
+    pvp: { dmg: number; def: number; heal: number };
+  }
+> = {
+  offense: {
+    id: "offense",
+    name: "Offense",
+    blurb: "+damage, −defense",
+    pve: { dmg: 1.18, def: 0.9, heal: 0.95 },
+    pvp: { dmg: 1.22, def: 0.88, heal: 0.9 },
+  },
+  defense: {
+    id: "defense",
+    name: "Defense",
+    blurb: "+mitigation, steady heals",
+    pve: { dmg: 0.92, def: 1.25, heal: 1.05 },
+    pvp: { dmg: 0.9, def: 1.3, heal: 1.08 },
+  },
+  support: {
+    id: "support",
+    name: "Support",
+    blurb: "+healing, mild damage",
+    pve: { dmg: 0.95, def: 1.05, heal: 1.28 },
+    pvp: { dmg: 0.92, def: 1.08, heal: 1.32 },
+  },
+  balanced: {
+    id: "balanced",
+    name: "Balanced",
+    blurb: "Even PvE & PvP stats",
+    pve: { dmg: 1.05, def: 1.05, heal: 1.05 },
+    pvp: { dmg: 1.05, def: 1.05, heal: 1.05 },
+  },
+};
+
+export const TOWER_SKILLS: Record<TowerSkillId, TowerSkillDef> = {
+  basic_strike: {
+    id: "basic_strike",
+    name: "Basic Strike",
+    classId: "scholar",
+    unlockLevel: 1,
+    kind: "attack",
+    power: 1,
+    energyCost: 0,
+    vfx: "slash",
+    blurb: "Standard quiz strike",
+  },
+  focus_bolt: {
+    id: "focus_bolt",
+    name: "Focus Bolt",
+    classId: "scholar",
+    unlockLevel: 3,
+    kind: "attack",
+    power: 1.35,
+    energyCost: 8,
+    vfx: "bolt",
+    blurb: "Piercing knowledge bolt",
+  },
+  tome_burst: {
+    id: "tome_burst",
+    name: "Tome Burst",
+    classId: "scholar",
+    unlockLevel: 7,
+    kind: "attack",
+    power: 1.75,
+    energyCost: 14,
+    vfx: "burst",
+    blurb: "Explosive page storm",
+  },
+  shield_bash: {
+    id: "shield_bash",
+    name: "Shield Bash",
+    classId: "guardian",
+    unlockLevel: 1,
+    kind: "attack",
+    power: 1.05,
+    energyCost: 4,
+    vfx: "slash",
+    blurb: "Bash with resolve",
+  },
+  iron_ward: {
+    id: "iron_ward",
+    name: "Iron Ward",
+    classId: "guardian",
+    unlockLevel: 3,
+    kind: "buff",
+    power: 0.6,
+    energyCost: 10,
+    vfx: "shield",
+    blurb: "Brief damage shield + light hit",
+  },
+  bulwark: {
+    id: "bulwark",
+    name: "Bulwark",
+    classId: "guardian",
+    unlockLevel: 7,
+    kind: "heal",
+    power: 1.2,
+    energyCost: 12,
+    vfx: "shield",
+    blurb: "Fortify and mend",
+  },
+  swift_cut: {
+    id: "swift_cut",
+    name: "Swift Cut",
+    classId: "striker",
+    unlockLevel: 1,
+    kind: "attack",
+    power: 1.1,
+    energyCost: 2,
+    vfx: "slash",
+    blurb: "Quick blade",
+  },
+  power_slash: {
+    id: "power_slash",
+    name: "Power Slash",
+    classId: "striker",
+    unlockLevel: 3,
+    kind: "attack",
+    power: 1.45,
+    energyCost: 9,
+    vfx: "slash",
+    blurb: "Heavy crit-friendly slash",
+  },
+  execute: {
+    id: "execute",
+    name: "Execute",
+    classId: "striker",
+    unlockLevel: 7,
+    kind: "attack",
+    power: 1.9,
+    energyCost: 16,
+    vfx: "burst",
+    blurb: "Finisher vs wounded foes",
+  },
+  arc_spark: {
+    id: "arc_spark",
+    name: "Arc Spark",
+    classId: "mystic",
+    unlockLevel: 1,
+    kind: "attack",
+    power: 1.08,
+    energyCost: 3,
+    vfx: "spark",
+    blurb: "Crackling spark",
+  },
+  spirit_lance: {
+    id: "spirit_lance",
+    name: "Spirit Lance",
+    classId: "mystic",
+    unlockLevel: 3,
+    kind: "attack",
+    power: 1.5,
+    energyCost: 10,
+    vfx: "lance",
+    blurb: "Spirit spear",
+  },
+  nova: {
+    id: "nova",
+    name: "Nova",
+    classId: "mystic",
+    unlockLevel: 7,
+    kind: "attack",
+    power: 1.85,
+    energyCost: 15,
+    vfx: "nova",
+    blurb: "Arcane nova blast",
+  },
+  mend: {
+    id: "mend",
+    name: "Mend",
+    classId: "harmonist",
+    unlockLevel: 1,
+    kind: "heal",
+    power: 1.1,
+    energyCost: 6,
+    vfx: "heal",
+    blurb: "Gentle restore",
+  },
+  harmony_pulse: {
+    id: "harmony_pulse",
+    name: "Harmony Pulse",
+    classId: "harmonist",
+    unlockLevel: 3,
+    kind: "heal",
+    power: 1.4,
+    energyCost: 10,
+    vfx: "heal",
+    blurb: "Strong heal pulse",
+  },
+  blessing: {
+    id: "blessing",
+    name: "Blessing",
+    classId: "harmonist",
+    unlockLevel: 7,
+    kind: "heal",
+    power: 1.65,
+    energyCost: 14,
+    vfx: "bless",
+    blurb: "Full blessing restore",
+  },
+};
+
+export function skillsForClass(classId: GotchiClassId): TowerSkillDef[] {
+  return Object.values(TOWER_SKILLS).filter((s) => s.classId === classId);
+}
+
+export function unlockedSkillsFor(classId: GotchiClassId, level: number): TowerSkillId[] {
+  return skillsForClass(classId)
+    .filter((s) => level >= s.unlockLevel)
+    .map((s) => s.id);
+}
+
+export function skillsLearnedAtLevel(classId: GotchiClassId, level: number): TowerSkillDef[] {
+  return skillsForClass(classId).filter((s) => s.unlockLevel === level);
+}
+
+export type TowerLoadout = {
+  classId: GotchiClassId;
+  buildId: GotchiBuildId;
+  unlocked: TowerSkillId[];
+  activeSkill: TowerSkillId;
+};
+
+export function defaultLoadout(classId: GotchiClassId = "scholar"): TowerLoadout {
+  const unlocked = unlockedSkillsFor(classId, 1);
+  return {
+    classId,
+    buildId: "balanced",
+    unlocked,
+    activeSkill: unlocked[0] ?? "basic_strike",
+  };
+}
+
+export function readLoadout(equipment: Record<string, unknown> | null | undefined): TowerLoadout {
+  const classId = (equipment?.tower_class as GotchiClassId) || "scholar";
+  const buildId = (equipment?.tower_build as GotchiBuildId) || "balanced";
+  const level = Number(equipment?.tower_level_hint ?? 1) || 1;
+  const fromEquip = Array.isArray(equipment?.unlocked_skills)
+    ? (equipment!.unlocked_skills as string[]).filter((id): id is TowerSkillId => id in TOWER_SKILLS)
+    : [];
+  const unlocked = [...new Set([...unlockedSkillsFor(classId, level), ...fromEquip])];
+  const active =
+    (equipment?.active_skill as TowerSkillId) && unlocked.includes(equipment!.active_skill as TowerSkillId)
+      ? (equipment!.active_skill as TowerSkillId)
+      : unlocked[0] ?? skillsForClass(classId)[0]?.id ?? "basic_strike";
+  return { classId, buildId, unlocked, activeSkill: active };
+}
+
+export function withLoadout(
+  equipment: Record<string, unknown> | null | undefined,
+  patch: Partial<TowerLoadout> & { level?: number },
+): Record<string, unknown> {
+  const cur = readLoadout(equipment);
+  const classId = patch.classId ?? cur.classId;
+  const buildId = patch.buildId ?? cur.buildId;
+  const level = patch.level ?? Number(equipment?.tower_level_hint ?? 1) || 1;
+  let unlocked = patch.unlocked ?? cur.unlocked;
+  if (patch.classId && patch.classId !== cur.classId) {
+    unlocked = unlockedSkillsFor(classId, level);
+  } else {
+    unlocked = [...new Set([...unlocked, ...unlockedSkillsFor(classId, level)])];
+  }
+  const activeSkill =
+    patch.activeSkill && unlocked.includes(patch.activeSkill)
+      ? patch.activeSkill
+      : unlocked.includes(cur.activeSkill)
+        ? cur.activeSkill
+        : unlocked[0];
+  return {
+    ...(equipment ?? {}),
+    tower_class: classId,
+    tower_build: buildId,
+    unlocked_skills: unlocked,
+    active_skill: activeSkill,
+    tower_level_hint: level,
+  };
+}
+
+export function buildMultipliers(buildId: GotchiBuildId, pvp: boolean) {
+  const b = GOTCHI_BUILDS[buildId] ?? GOTCHI_BUILDS.balanced;
+  return pvp ? b.pvp : b.pve;
+}
+
+export function classDamageMod(classId: GotchiClassId): number {
+  switch (classId) {
+    case "striker":
+      return 1.12;
+    case "mystic":
+      return 1.08;
+    case "scholar":
+      return 1.06;
+    case "guardian":
+      return 0.95;
+    case "harmonist":
+      return 0.9;
+    default:
+      return 1;
+  }
+}
+
+export function classDefenseMod(classId: GotchiClassId): number {
+  switch (classId) {
+    case "guardian":
+      return 1.2;
+    case "harmonist":
+      return 1.08;
+    case "striker":
+      return 0.92;
+    default:
+      return 1;
+  }
+}
+
 export type FloorEnemyDef = {
   id: string;
   name: string;

@@ -439,14 +439,18 @@ create policy "public read group avatars" on storage.objects
   for select using (bucket_id = 'group-avatars');
 
 drop policy if exists "group owner upsert avatar" on storage.objects;
-create policy "group owner upsert avatar" on storage.objects
+drop policy if exists "group owner insert avatar" on storage.objects;
+create policy "group owner insert avatar" on storage.objects
   for insert to authenticated
   with check (
     bucket_id = 'group-avatars'
     and exists (
       select 1 from public.chat_groups g
-      where g.id = ((storage.foldername(name))[1])::uuid
-        and g.created_by = auth.uid()
+      where g.created_by = auth.uid()
+        and (
+          g.id::text = split_part(name, '/', 1)
+          or g.id::text = (storage.foldername(name))[1]
+        )
     )
   );
 
@@ -457,8 +461,22 @@ create policy "group owner update avatar" on storage.objects
     bucket_id = 'group-avatars'
     and exists (
       select 1 from public.chat_groups g
-      where g.id = ((storage.foldername(name))[1])::uuid
-        and g.created_by = auth.uid()
+      where g.created_by = auth.uid()
+        and (
+          g.id::text = split_part(name, '/', 1)
+          or g.id::text = (storage.foldername(name))[1]
+        )
+    )
+  )
+  with check (
+    bucket_id = 'group-avatars'
+    and exists (
+      select 1 from public.chat_groups g
+      where g.created_by = auth.uid()
+        and (
+          g.id::text = split_part(name, '/', 1)
+          or g.id::text = (storage.foldername(name))[1]
+        )
     )
   );
 
@@ -469,8 +487,11 @@ create policy "group owner delete avatar" on storage.objects
     bucket_id = 'group-avatars'
     and exists (
       select 1 from public.chat_groups g
-      where g.id = ((storage.foldername(name))[1])::uuid
-        and g.created_by = auth.uid()
+      where g.created_by = auth.uid()
+        and (
+          g.id::text = split_part(name, '/', 1)
+          or g.id::text = (storage.foldername(name))[1]
+        )
     )
   );
 

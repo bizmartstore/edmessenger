@@ -17,7 +17,14 @@ import type { Voxel } from "@/lib/edgotchi";
 import { VoxelPainter, VoxelPreview } from "@/components/games/edgotchi/VoxelPainter";
 import {
   ATTR_LABELS,
+  GOTCHI_BUILDS,
+  GOTCHI_CLASSES,
   GOTCHI_EDIT_COST,
+  TOWER_SKILLS,
+  buildMultipliers,
+  classDamageMod,
+  classDefenseMod,
+  defaultLoadout,
   derivedStats,
   enemiesForFloor,
   foeMaxHpFor,
@@ -30,16 +37,22 @@ import {
   loadTowerAvatar,
   rankTowerPlayers,
   readFloorProgress,
+  readLoadout,
   saveTowerAvatar,
+  skillsLearnedAtLevel,
   themeForFloor,
   towerWsUrl,
   updateTowerPlayer,
   withFloorProgress,
+  withLoadout,
   xpToNextLevel,
+  type GotchiBuildId,
+  type GotchiClassId,
   type TowerAvatar,
   type TowerEvent,
   type TowerPlayer,
   type TowerQuestion,
+  type TowerSkillId,
 } from "@/lib/gotchi-tower";
 import { awardGcoins } from "@/lib/gcoins";
 import { cn } from "@/lib/utils";
@@ -138,6 +151,11 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
   const [activeEnemyId, setActiveEnemyId] = useState<string | null>(null);
   const [showBoard, setShowBoard] = useState(true);
   const [paidEdit, setPaidEdit] = useState(false);
+  const [selectedSkill, setSelectedSkill] = useState<TowerSkillId | null>(null);
+  const [lastExplanation, setLastExplanation] = useState<{
+    text: string;
+    correct: boolean;
+  } | null>(null);
 
   const floorHostRef = useRef<HTMLDivElement>(null);
   const battleHostRef = useRef<HTMLDivElement>(null);
@@ -315,6 +333,18 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       setPlayer(row);
       setVoxels(row.voxels?.length ? row.voxels : useAvatar.voxels);
       setDefeatedOnFloor(readFloorProgress(row.equipment, row.floor));
+      {
+        const lo = readLoadout({ ...row.equipment, tower_level_hint: row.level });
+        setSelectedSkill(lo.activeSkill);
+        if (!(row.equipment as { tower_class?: string } | null)?.tower_class) {
+          const equipment = withLoadout(row.equipment, {
+            ...defaultLoadout("scholar"),
+            level: row.level,
+          });
+          setPlayer({ ...row, equipment });
+          void updateTowerPlayer(row.id, { equipment }).catch(() => {});
+        }
+      }
       try {
         setPeers(await listEventPlayers(row.event_id));
       } catch {
@@ -618,6 +648,10 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
     setQuizOpen(false);
 
     let next = { ...player };
+    const loadout = readLoadout({ ...next.equipment, tower_level_hint: next.level });
+    const isPvp = battleMode === "pvp";
+    const buildMul = buildMultipliers(loadout.buildId, isPvp);
+
     if (correct) {
       next.correct_answers += 1;
       next.xp += 10 + Math.floor(player.floor / 2);
@@ -631,6 +665,20 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
         if (next.level % 3 === 0) next.spirit += 1;
         if (next.level % 4 === 0) next.harmony += 1;
         if (next.level % 5 === 0) next.agility += 1;
+        const learned = skillsLearnedAtLevel(loadout.classId, next.level);
+        if (learned.length) {
+          const unlocked = [...new Set([...loadout.unlocked, ...learned.map((s) => s.id)])];
+          next.equipment = withLoadout(next.equipment, {
+            classId: loadout.classId,
+            buildId: loadout.buildId,
+            unlocked,
+            activeSkill: loadout.activeSkill,
+            level: next.level,
+          });
+          toast.message(`Lv ${next.level} — learned ${learned.map((s) => s.name).join(", ")}!`);
+        } else {
+          next.equipment = withLoadout(next.equipment, { level: next.level });
+        }
         const stats = derivedStats({
           knowledge: next.knowledge,
           resolve: next.resolve,
@@ -643,10 +691,17 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
         next.max_energy = stats.maxEnergy;
         next.hp = Math.min(next.max_hp, next.hp + 10);
       }
-      toast.success(quiz.explanation || "Correct!");
     } else {
       next.wrong_answers += 1;
-      toast.error(quiz.explanation || "Incorrect — the foe retaliates!");
+    }
+
+    // Explanation sits under the battle scene — never covers Phaser canvas
+    setLastExplanation({
+      text: quiz.explanation || (correct ? "Correct!" : "Incorrect."),
+      correct,
+    });
+    if (battleMode === "gate" || battleMode === "chest") {
+      toast[correct ? "success" : "error"](correct ? "Correct!" : "Incorrect");
     }
 
     if (battleMode === "gate" || battleMode === "chest") {
@@ -708,59 +763,143 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
     });
     const combatMode =
       battleMode === "boss" ? "boss" : battleMode === "pvp" ? "pvp" : "monster";
+    const defense =
+      stats.defense * classDefenseMod(loadout.classId) * buildMul.def;
+    const skillId: TowerSkillId | null =
+      pendingAction === "skill"
+        ? selectedSkill && loadout.unlocked.includes(selectedSkill)
+          ? selectedSkill
+          : loadout.activeSkill
+        : pendingAction === "heal"
+          ? loadout.unlocked.find((id) => TOWER_SKILLS[id].kind === "heal") ?? null
+          : null;
+    const skillDef = skillId ? TOWER_SKILLS[skillId] : null;
+    const treatAsHeal =
+      pendingAction === "heal" || skillDef?.kind === "heal" || skillDef?.kind === "buff";
 
-    if (pendingAction === "heal") {
+    if (treatAsHeal) {
+      const cost = skillDef?.energyCost ?? 8;
+      if (correct && next.energy < cost) {
+        toast.error("Not enough energy");
+        setPendingAction(null);
+        setPlayer(next);
+        await persistPlayer(next);
+        return;
+      }
       if (correct) {
-        const heal = Math.floor(stats.healPower);
+        const heal = Math.floor(
+          stats.healPower * (skillDef?.power ?? 1) * buildMul.heal * (skillDef?.kind === "buff" ? 0.5 : 1),
+        );
         next.hp = Math.min(next.max_hp, next.hp + heal);
-        next.energy = Math.max(0, next.energy - 8);
-        setBattleLog((l) => [...l, `Harmony pulse heals ${heal} HP.`]);
-        battleGameRef.current?.events.emit("gt-battle-vfx", { type: "heal", amount: heal });
+        next.energy = Math.max(0, next.energy - cost);
+        setBattleLog((l) => [...l, `${skillDef?.name ?? "Heal"} restores ${heal} HP.`]);
+        battleGameRef.current?.events.emit("gt-battle-vfx", {
+          type: "heal",
+          amount: heal,
+          vfx: skillDef?.vfx ?? "heal",
+        });
+        if (skillDef?.kind === "buff") {
+          const poke = Math.floor(stats.skillPower * 0.5 * buildMul.dmg * classDamageMod(loadout.classId));
+          const newFoe = Math.max(0, foeHp - poke);
+          setFoeHp(newFoe);
+          battleGameRef.current?.events.emit("gt-battle-vfx", {
+            type: "hit",
+            target: "enemy",
+            amount: poke,
+            vfx: skillDef.vfx,
+            skill: skillDef.name,
+          });
+          if (newFoe <= 0) {
+            next.battles_won += 1;
+            next.xp += 18;
+            next.gcoins_earned += 3;
+            battleGameRef.current?.events.emit("gt-battle-vfx", { type: "win" });
+            if (activeEnemyId) {
+              const defeated = [...new Set([...defeatedOnFloor, activeEnemyId])];
+              setDefeatedOnFloor(defeated);
+              next.equipment = withFloorProgress(next.equipment, next.floor, defeated);
+            }
+            setActiveEnemyId(null);
+            setPlayer(next);
+            await persistPlayer(next);
+            setTimeout(() => setScreen("floor"), 800);
+            setPendingAction(null);
+            return;
+          }
+        }
       } else {
-        const retal = foeRetaliationDamage(player.floor, combatMode, stats.defense, true);
+        const retal = foeRetaliationDamage(player.floor, combatMode, defense, true);
         next.hp = Math.max(0, next.hp - retal);
         setBattleLog((l) => [...l, `Heal fizzled — ${foeName} strikes for ${retal}!`]);
         battleGameRef.current?.events.emit("gt-battle-vfx", {
           type: "hit",
           target: "player",
           amount: retal,
+          vfx: "slash",
         });
       }
     } else {
-      const dmg = correct
-        ? Math.floor(
-            stats.skillPower *
-              (pendingAction === "skill" ? 1.4 : 1) *
-              (Math.random() < stats.critChance ? 1.6 : 1),
-          )
-        : Math.floor(4 + Math.random() * 5);
+      const cost = skillDef?.energyCost ?? 0;
+      if (correct && skillDef && next.energy < cost) {
+        toast.error("Not enough energy for that skill");
+        setPendingAction(null);
+        setPlayer(next);
+        await persistPlayer(next);
+        return;
+      }
+      const power = skillDef?.power ?? 1;
+      let crit = false;
+      let dmg = 0;
+      if (correct) {
+        crit =
+          Math.random() <
+          stats.critChance * (loadout.classId === "striker" ? 1.25 : 1);
+        dmg = Math.floor(
+          stats.skillPower *
+            power *
+            classDamageMod(loadout.classId) *
+            buildMul.dmg *
+            (crit ? 1.65 : 1) *
+            (skillDef?.id === "execute" && foeHp / Math.max(1, foeMaxHp) < 0.4 ? 1.35 : 1),
+        );
+        if (skillDef) next.energy = Math.max(0, next.energy - cost);
+      } else {
+        dmg = Math.floor(4 + Math.random() * 5);
+      }
       const newFoe = Math.max(0, foeHp - dmg);
       setFoeHp(newFoe);
       setBattleLog((l) => [
         ...l,
-        correct ? `Quiz strike deals ${dmg} damage!` : `Missed quiz — weak hit for ${dmg}.`,
+        correct
+          ? `${skillDef?.name ?? "Attack"} deals ${dmg}${crit ? " CRIT" : ""}!`
+          : `Missed quiz — weak hit for ${dmg}.`,
       ]);
       battleGameRef.current?.events.emit("gt-battle-vfx", {
         type: "hit",
         target: "enemy",
         amount: dmg,
+        crit,
+        vfx: skillDef?.vfx ?? "slash",
+        skill: skillDef?.name,
       });
       if (!correct) {
-        const retal = foeRetaliationDamage(player.floor, combatMode, stats.defense, true);
+        const retal = foeRetaliationDamage(player.floor, combatMode, defense, true);
         next.hp = Math.max(0, next.hp - retal);
         battleGameRef.current?.events.emit("gt-battle-vfx", {
           type: "hit",
           target: "player",
           amount: retal,
+          vfx: "slash",
         });
         setBattleLog((l) => [...l, `${foeName} retaliates for ${retal}!`]);
       } else if (newFoe > 0) {
-        const retal = foeRetaliationDamage(player.floor, combatMode, stats.defense, false);
+        const retal = foeRetaliationDamage(player.floor, combatMode, defense, false);
         next.hp = Math.max(0, next.hp - retal);
         battleGameRef.current?.events.emit("gt-battle-vfx", {
           type: "hit",
           target: "player",
           amount: retal,
+          vfx: "slash",
         });
         setBattleLog((l) => [...l, `${foeName} counters for ${retal}!`]);
       }
@@ -846,10 +985,27 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
     }).catch(() => {});
   }
 
-  function startCombatAction(action: "attack" | "heal" | "skill") {
+  function startCombatAction(action: "attack" | "heal" | "skill", skill?: TowerSkillId) {
+    if (skill) setSelectedSkill(skill);
+    setLastExplanation(null);
     setPendingAction(action);
     setQuiz(pickQuestion());
     setQuizOpen(true);
+  }
+
+  async function saveClassBuild(classId: GotchiClassId, buildId: GotchiBuildId) {
+    if (!player) return;
+    const equipment = withLoadout(player.equipment, {
+      classId,
+      buildId,
+      level: player.level,
+    });
+    const next = { ...player, equipment };
+    setPlayer(next);
+    const lo = readLoadout({ ...equipment, tower_level_hint: player.level });
+    setSelectedSkill(lo.activeSkill);
+    await updateTowerPlayer(player.id, { equipment }).catch(() => {});
+    toast.success(`${GOTCHI_CLASSES[classId].name} · ${GOTCHI_BUILDS[buildId].name} build`);
   }
 
   function sendChat(e: React.FormEvent) {
@@ -1095,6 +1251,84 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
 
           <Panel>
             <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">
+              Class & build
+            </div>
+            <p className="text-[10px] text-muted-foreground mb-2">
+              Class skills unlock as you level. Build changes PvE and PvP damage, defense, and healing.
+            </p>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 mb-2">
+              {(Object.keys(GOTCHI_CLASSES) as GotchiClassId[]).map((id) => {
+                const cur = readLoadout({
+                  ...player.equipment,
+                  tower_level_hint: player.level,
+                });
+                const active = cur.classId === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => void saveClassBuild(id, cur.buildId)}
+                    className={cn(
+                      "rounded-xl px-2 py-2 text-left text-[11px] font-semibold",
+                      active ? GOTCHI_CLASSES[id].color + " ring-1 ring-current" : "bg-muted",
+                    )}
+                  >
+                    <div className="font-bold">{GOTCHI_CLASSES[id].name}</div>
+                    <div className="text-[9px] opacity-80 font-medium">{GOTCHI_CLASSES[id].blurb}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {(Object.keys(GOTCHI_BUILDS) as GotchiBuildId[]).map((id) => {
+                const cur = readLoadout({
+                  ...player.equipment,
+                  tower_level_hint: player.level,
+                });
+                const active = cur.buildId === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => void saveClassBuild(cur.classId, id)}
+                    className={cn(
+                      "rounded-xl px-2 py-2 text-left text-[11px] font-semibold",
+                      active ? "bg-amber-500/15 text-amber-900 ring-1 ring-amber-500/40" : "bg-muted",
+                    )}
+                  >
+                    <div className="font-bold">{GOTCHI_BUILDS[id].name}</div>
+                    <div className="text-[9px] text-muted-foreground font-medium">
+                      {GOTCHI_BUILDS[id].blurb}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {(() => {
+              const cur = readLoadout({
+                ...player.equipment,
+                tower_level_hint: player.level,
+              });
+              return (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {cur.unlocked.map((sid) => (
+                    <span
+                      key={sid}
+                      className="rounded-full bg-violet-500/10 px-2 py-0.5 text-[9px] font-semibold text-violet-800"
+                    >
+                      {TOWER_SKILLS[sid].name}
+                      {TOWER_SKILLS[sid].unlockLevel > 1
+                        ? ` · Lv${TOWER_SKILLS[sid].unlockLevel}`
+                        : ""}
+                    </span>
+                  ))}
+                </div>
+              );
+            })()}
+          </Panel>
+
+          <Panel>
+            <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">
               Attributes
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -1273,47 +1507,140 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
 
       {screen === "battle" && player && (
         <div className="space-y-2">
-          <div ref={battleHostRef} className="w-full overflow-hidden rounded-2xl border border-border bg-[#0b1220]" />
+          <div
+            ref={battleHostRef}
+            className="w-full overflow-hidden rounded-2xl border border-border bg-[#0b1220]"
+          />
+          {lastExplanation && (
+            <div
+              className={cn(
+                "rounded-xl px-3 py-2 text-[11px] leading-snug border",
+                lastExplanation.correct
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-900"
+                  : "bg-rose-500/10 border-rose-500/30 text-rose-900",
+              )}
+            >
+              <span className="font-bold">
+                {lastExplanation.correct ? "Correct — " : "Incorrect — "}
+              </span>
+              {lastExplanation.text}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <StatBar label={player.gotchi_name} value={player.hp} max={player.max_hp} color="bg-rose-500" />
+            <StatBar
+              label={player.gotchi_name}
+              value={player.hp}
+              max={player.max_hp}
+              color="bg-rose-500"
+            />
             <StatBar label={foeName} value={foeHp} max={foeMaxHp} color="bg-violet-500" />
           </div>
-          <div className="max-h-24 overflow-y-auto rounded-xl bg-muted px-3 py-2 text-[11px] space-y-0.5">
+          <div className="max-h-20 overflow-y-auto rounded-xl bg-muted px-3 py-2 text-[11px] space-y-0.5">
             {battleLog.slice(-8).map((l, i) => (
               <div key={`${i}-${l}`}>{l}</div>
             ))}
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <button type="button" onClick={() => startCombatAction("attack")} className="rounded-xl py-2.5 text-xs font-bold bg-rose-500/15 text-rose-800">
-              <Swords className="inline h-3.5 w-3.5 mr-1" /> Attack
-            </button>
-            <button type="button" onClick={() => startCombatAction("skill")} className="rounded-xl py-2.5 text-xs font-bold bg-indigo-500/15 text-indigo-800">
-              <Sparkles className="inline h-3.5 w-3.5 mr-1" /> Skill
-            </button>
-            <button type="button" onClick={() => startCombatAction("heal")} className="rounded-xl py-2.5 text-xs font-bold bg-emerald-500/15 text-emerald-800">
-              <Heart className="inline h-3.5 w-3.5 mr-1" /> Heal
-            </button>
-          </div>
+          {(() => {
+            const lo = readLoadout({
+              ...player.equipment,
+              tower_level_hint: player.level,
+            });
+            return (
+              <div className="space-y-1.5">
+                <div className="text-[10px] font-semibold text-muted-foreground">
+                  {GOTCHI_CLASSES[lo.classId].name} · {GOTCHI_BUILDS[lo.buildId].name} · Energy{" "}
+                  {player.energy}/{player.max_energy}
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => startCombatAction("attack")}
+                    className="rounded-xl py-2 text-[11px] font-bold bg-rose-500/15 text-rose-800"
+                  >
+                    <Swords className="inline h-3 w-3 mr-0.5" /> Attack
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startCombatAction("heal")}
+                    className="rounded-xl py-2 text-[11px] font-bold bg-emerald-500/15 text-emerald-800"
+                  >
+                    <Heart className="inline h-3 w-3 mr-0.5" /> Heal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startCombatAction("skill", lo.activeSkill)}
+                    className="rounded-xl py-2 text-[11px] font-bold bg-indigo-500/15 text-indigo-800"
+                  >
+                    <Sparkles className="inline h-3 w-3 mr-0.5" />{" "}
+                    {TOWER_SKILLS[lo.activeSkill]?.name ?? "Skill"}
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {lo.unlocked.map((sid) => (
+                    <button
+                      key={sid}
+                      type="button"
+                      onClick={() => {
+                        setSelectedSkill(sid);
+                        void updateTowerPlayer(player.id, {
+                          equipment: withLoadout(player.equipment, {
+                            activeSkill: sid,
+                            level: player.level,
+                          }),
+                        }).catch(() => {});
+                        setPlayer({
+                          ...player,
+                          equipment: withLoadout(player.equipment, {
+                            activeSkill: sid,
+                            level: player.level,
+                          }),
+                        });
+                        startCombatAction(
+                          TOWER_SKILLS[sid].kind === "heal" || TOWER_SKILLS[sid].kind === "buff"
+                            ? "heal"
+                            : "skill",
+                          sid,
+                        );
+                      }}
+                      className={cn(
+                        "rounded-lg px-2 py-1 text-[9px] font-bold",
+                        (selectedSkill ?? lo.activeSkill) === sid
+                          ? "bg-violet-600 text-white"
+                          : "bg-violet-500/10 text-violet-900",
+                      )}
+                    >
+                      {TOWER_SKILLS[sid].name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
       {quizOpen && quiz && (
-        <div className="fixed inset-0 z-50 grid place-items-end sm:place-items-center bg-black/50 p-3">
-          <div className="w-full max-w-md rounded-3xl border border-border bg-card p-4 shadow-glow animate-fade-up">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-primary mb-1">
+        <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center">
+          <div className="absolute inset-0 bg-black/35 sm:bg-black/45" aria-hidden />
+          <div className="relative z-10 w-full sm:max-w-md max-h-[40vh] sm:max-h-[65vh] overflow-y-auto rounded-t-2xl sm:rounded-3xl border border-border bg-card p-2.5 sm:p-4 shadow-glow pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            <div className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-primary mb-0.5">
               {quiz.category} · {quiz.difficulty}
               {quiz.hint ? ` · Hint: ${quiz.hint}` : ""}
             </div>
-            <div className="text-sm font-bold leading-snug mb-3">{quiz.question}</div>
-            <div className="grid gap-2">
+            <div className="text-[11px] sm:text-sm font-bold leading-snug mb-1.5 sm:mb-2">
+              {quiz.question}
+            </div>
+            <div className="grid gap-1 sm:gap-2">
               {quiz.options.map((opt, i) => (
                 <button
                   key={`${opt}-${i}`}
                   type="button"
                   onClick={() => void answerQuiz(i)}
-                  className="rounded-xl border border-border bg-muted px-3 py-2.5 text-left text-sm font-medium hover:border-primary hover:bg-primary/5"
+                  className="rounded-lg border border-border bg-muted px-2 py-1.5 sm:px-3 sm:py-2.5 text-left text-[11px] sm:text-sm font-medium hover:border-primary active:bg-primary/10 min-h-[34px] sm:min-h-[44px]"
                 >
-                  <span className="mr-2 font-bold text-primary">{String.fromCharCode(65 + i)}</span>
+                  <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded bg-primary/15 text-[10px] font-extrabold text-primary">
+                    {String.fromCharCode(65 + i)}
+                  </span>
                   {opt}
                 </button>
               ))}

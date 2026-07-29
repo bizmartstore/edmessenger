@@ -203,19 +203,46 @@ export async function uploadGroupAvatar(groupId: string, file: File): Promise<st
   }
   const processed = await compressImage(file);
   const path = `${groupId}/avatar.webp`;
-  const { error } = await supabase.storage.from("group-avatars").upload(path, processed, {
+
+  let { error } = await supabase.storage.from("group-avatars").upload(path, processed, {
     cacheControl: "86400",
     upsert: true,
     contentType: processed.type || "image/webp",
   });
-  if (error) throw error;
+
+  // Upsert can fail RLS on UPDATE — remove then insert
+  if (error && /row-level security|RLS|policy/i.test(error.message)) {
+    await supabase.storage.from("group-avatars").remove([path]).catch(() => {});
+    ({ error } = await supabase.storage.from("group-avatars").upload(path, processed, {
+      cacheControl: "86400",
+      upsert: false,
+      contentType: processed.type || "image/webp",
+    }));
+  }
+
+  if (error) {
+    if (/row-level security|RLS|policy|bucket/i.test(error.message)) {
+      throw new Error(
+        "Group photo blocked by storage policy. Ask admin to run SUPABASE_MIGRATION_GROUP_AVATARS_FIX.sql in Supabase.",
+      );
+    }
+    throw error;
+  }
+
   const { data: pub } = supabase.storage.from("group-avatars").getPublicUrl(path);
   const url = `${pub.publicUrl}?v=${Date.now()}`;
   const { error: rpcErr } = await supabase.rpc("update_group_avatar", {
     p_group: groupId,
     p_url: url,
   });
-  if (rpcErr) throw rpcErr;
+  if (rpcErr) {
+    if (/Could not find the function|schema cache|PGRST/i.test(rpcErr.message)) {
+      throw new Error(
+        "Missing update_group_avatar RPC — run SUPABASE_MIGRATION_GROUP_AVATARS_FIX.sql in Supabase.",
+      );
+    }
+    throw rpcErr;
+  }
   return url;
 }
 
