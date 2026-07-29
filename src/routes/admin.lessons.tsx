@@ -17,11 +17,15 @@ import {
   ClipboardPaste,
   ChevronDown,
   ChevronUp,
+  Pencil,
+  Save,
+  X,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { notifyRole } from "@/lib/push";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AdminSubjectSelect } from "@/components/AdminSubjectSelect";
+import { listSubjects, type Subject } from "@/lib/subjects";
 
 export const Route = createFileRoute("/admin/lessons")({
   component: AdminLessons,
@@ -34,12 +38,14 @@ interface Lesson {
   file_url: string;
   file_name: string;
   file_size: number;
+  subject_id: string | null;
   created_at: string;
 }
 
 interface Reviewer {
   id: string;
   lesson_id: string | null;
+  subject_id: string | null;
   title: string;
   description: string | null;
   published: boolean;
@@ -93,6 +99,22 @@ function AdminLessons() {
   const [draftQs, setDraftQs] = useState<ParsedReviewerQuestion[]>([]);
   const [creating, setCreating] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+
+  // Edit material
+  const [editLessonId, setEditLessonId] = useState<string | null>(null);
+  const [editLessonTitle, setEditLessonTitle] = useState("");
+  const [editLessonDesc, setEditLessonDesc] = useState("");
+  const [editLessonSubjectId, setEditLessonSubjectId] = useState("");
+  const [savingLesson, setSavingLesson] = useState(false);
+
+  // Edit reviewer meta
+  const [editReviewerId, setEditReviewerId] = useState<string | null>(null);
+  const [editRevTitle, setEditRevTitle] = useState("");
+  const [editRevDesc, setEditRevDesc] = useState("");
+  const [editRevSubjectId, setEditRevSubjectId] = useState("");
+  const [editRevLessonId, setEditRevLessonId] = useState("");
+  const [savingReviewer, setSavingReviewer] = useState(false);
 
   async function loadLessons() {
     const { data } = await supabase.from("lessons").select("*").order("created_at", { ascending: false });
@@ -111,7 +133,108 @@ function AdminLessons() {
   useEffect(() => {
     void loadLessons();
     void loadReviewers();
+    void listSubjects()
+      .then(setSubjects)
+      .catch(() => setSubjects([]));
   }, []);
+
+  function subjectName(id: string | null | undefined) {
+    if (!id) return "No subject";
+    return subjects.find((s) => s.id === id)?.name ?? "Unknown subject";
+  }
+
+  function startEditLesson(l: Lesson) {
+    setEditLessonId(l.id);
+    setEditLessonTitle(l.title);
+    setEditLessonDesc(l.description ?? "");
+    setEditLessonSubjectId(l.subject_id ?? "");
+  }
+
+  function cancelEditLesson() {
+    setEditLessonId(null);
+    setEditLessonTitle("");
+    setEditLessonDesc("");
+    setEditLessonSubjectId("");
+  }
+
+  async function saveLesson() {
+    if (!editLessonId || !editLessonTitle.trim()) {
+      toast.error("Title is required");
+      return;
+    }
+    if (!editLessonSubjectId) {
+      toast.error("Select a subject");
+      return;
+    }
+    setSavingLesson(true);
+    try {
+      const { error } = await supabase
+        .from("lessons")
+        .update({
+          title: editLessonTitle.trim(),
+          description: editLessonDesc.trim() || null,
+          subject_id: editLessonSubjectId,
+        })
+        .eq("id", editLessonId);
+      if (error) throw error;
+      toast.success("Material updated");
+      cancelEditLesson();
+      void loadLessons();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Update failed");
+    } finally {
+      setSavingLesson(false);
+    }
+  }
+
+  function startEditReviewer(r: Reviewer) {
+    setEditReviewerId(r.id);
+    setEditRevTitle(r.title);
+    setEditRevDesc(r.description ?? "");
+    setEditRevSubjectId(r.subject_id ?? "");
+    setEditRevLessonId(r.lesson_id ?? "");
+    setExpanded(r.id);
+    if (!questions[r.id]) void loadQs(r.id);
+  }
+
+  function cancelEditReviewer() {
+    setEditReviewerId(null);
+    setEditRevTitle("");
+    setEditRevDesc("");
+    setEditRevSubjectId("");
+    setEditRevLessonId("");
+  }
+
+  async function saveReviewer() {
+    if (!editReviewerId || !editRevTitle.trim()) {
+      toast.error("Title is required");
+      return;
+    }
+    if (!editRevSubjectId) {
+      toast.error("Select a subject");
+      return;
+    }
+    setSavingReviewer(true);
+    try {
+      const { error } = await supabase
+        .from("reviewers")
+        .update({
+          title: editRevTitle.trim(),
+          description: editRevDesc.trim() || null,
+          subject_id: editRevSubjectId,
+          lesson_id: editRevLessonId || null,
+        })
+        .eq("id", editReviewerId);
+      if (error) throw error;
+      toast.success("Reviewer updated");
+      cancelEditReviewer();
+      void loadReviewers();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Update failed");
+    } finally {
+      setSavingReviewer(false);
+    }
+  }
 
   async function upload(e: React.FormEvent) {
     e.preventDefault();
@@ -136,6 +259,7 @@ function AdminLessons() {
       notifyRole("student", "New lesson", title.trim(), "/lessons");
       setTitle("");
       setDesc("");
+      setSubjectId("");
       setFile(null);
       if (fileRef.current) fileRef.current.value = "";
       toast.success("Lesson uploaded");
@@ -240,6 +364,7 @@ function AdminLessons() {
       notifyRole("student", "New lesson reviewer", revTitle.trim(), "/lessons?tab=reviewers");
       setRevTitle("");
       setRevDesc("");
+      setRevSubjectId("");
       setRevLessonId("");
       setPasteText("");
       setAiNotes("");
@@ -356,22 +481,90 @@ function AdminLessons() {
 
           <div className="space-y-3">
             {lessons.map((l) => (
-              <div key={l.id} className="rounded-2xl p-3 bg-card border border-border shadow-card flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-primary/10 grid place-items-center shrink-0">
-                  <FileText className="h-4 w-4 text-primary" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-semibold text-sm truncate">{l.title}</div>
-                  <div className="text-[10px] text-muted-foreground">
-                    {humanSize(l.file_size)} · {formatDistanceToNow(new Date(l.created_at), { addSuffix: true })}
+              <div key={l.id} className="rounded-2xl p-3 bg-card border border-border shadow-card">
+                {editLessonId === l.id ? (
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-muted-foreground">Edit material</div>
+                    <input
+                      value={editLessonTitle}
+                      onChange={(e) => setEditLessonTitle(e.target.value)}
+                      placeholder="Lesson title"
+                      className="w-full px-3 py-2 rounded-xl bg-muted border border-border outline-none text-sm focus:border-primary"
+                    />
+                    <input
+                      value={editLessonDesc}
+                      onChange={(e) => setEditLessonDesc(e.target.value)}
+                      placeholder="Description (optional)"
+                      className="w-full px-3 py-2 rounded-xl bg-muted border border-border outline-none text-sm focus:border-primary"
+                    />
+                    <label className="block">
+                      <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Subject</span>
+                      <AdminSubjectSelect
+                        value={editLessonSubjectId}
+                        onChange={setEditLessonSubjectId}
+                        required
+                        className="mt-1 w-full px-3 py-2 rounded-xl bg-muted border border-border outline-none text-sm focus:border-primary"
+                      />
+                    </label>
+                    <div className="text-[10px] text-muted-foreground">
+                      File stays the same · {l.file_name} · {humanSize(l.file_size)}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={savingLesson}
+                        onClick={() => void saveLesson()}
+                        className="flex-1 py-2 rounded-xl gradient-primary text-primary-foreground text-xs font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-40"
+                      >
+                        <Save className="h-3.5 w-3.5" /> {savingLesson ? "Saving…" : "Save changes"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingLesson}
+                        onClick={cancelEditLesson}
+                        className="flex-1 py-2 rounded-xl border border-border bg-muted text-xs font-semibold inline-flex items-center justify-center gap-1.5"
+                      >
+                        <X className="h-3.5 w-3.5" /> Cancel
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <a href={l.file_url} target="_blank" rel="noopener" className="text-[10px] px-2 py-1 rounded-lg bg-muted font-semibold">
-                  View
-                </a>
-                <button onClick={() => delLesson(l.id)} className="p-2 rounded-lg text-destructive hover:bg-destructive/10">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-primary/10 grid place-items-center shrink-0">
+                      <FileText className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-sm truncate">{l.title}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {subjectName(l.subject_id)} · {humanSize(l.file_size)} ·{" "}
+                        {formatDistanceToNow(new Date(l.created_at), { addSuffix: true })}
+                      </div>
+                    </div>
+                    <a
+                      href={l.file_url}
+                      target="_blank"
+                      rel="noopener"
+                      className="text-[10px] px-2 py-1 rounded-lg bg-muted font-semibold"
+                    >
+                      View
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => startEditLesson(l)}
+                      className="p-2 rounded-lg hover:bg-muted text-muted-foreground"
+                      title="Edit"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void delLesson(l.id)}
+                      className="p-2 rounded-lg text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -572,6 +765,7 @@ function AdminLessons() {
             {reviewers.map((r) => {
               const open = expanded === r.id;
               const qs = questions[r.id] ?? [];
+              const editing = editReviewerId === r.id;
               return (
                 <div key={r.id} className="rounded-2xl bg-card border border-border shadow-card overflow-hidden">
                   <div className="p-4 flex items-center gap-3">
@@ -585,9 +779,20 @@ function AdminLessons() {
                     >
                       <div className="font-semibold text-sm truncate">{r.title}</div>
                       <div className="text-[10px] text-muted-foreground truncate">
-                        {lessonTitle(r.lesson_id) ? `Lesson: ${lessonTitle(r.lesson_id)}` : "Standalone"}
+                        {subjectName(r.subject_id)}
+                        {lessonTitle(r.lesson_id) ? ` · Lesson: ${lessonTitle(r.lesson_id)}` : " · Standalone"}
                         {r.description ? ` · ${r.description}` : ""}
                       </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => (editing ? cancelEditReviewer() : startEditReviewer(r))}
+                      className={`p-2 rounded-xl text-xs font-semibold ${
+                        editing ? "bg-primary/15 text-primary" : "hover:bg-muted text-muted-foreground"
+                      }`}
+                      title="Edit details"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
                     </button>
                     <button
                       type="button"
@@ -616,6 +821,62 @@ function AdminLessons() {
                       {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </button>
                   </div>
+                  {editing && (
+                    <div className="border-t border-border p-4 space-y-2 bg-primary/5">
+                      <div className="text-xs font-semibold text-muted-foreground">Edit reviewer details</div>
+                      <input
+                        value={editRevTitle}
+                        onChange={(e) => setEditRevTitle(e.target.value)}
+                        placeholder="Reviewer title"
+                        className="w-full px-3 py-2 rounded-xl bg-card border border-border outline-none text-sm focus:border-primary"
+                      />
+                      <input
+                        value={editRevDesc}
+                        onChange={(e) => setEditRevDesc(e.target.value)}
+                        placeholder="Description (optional)"
+                        className="w-full px-3 py-2 rounded-xl bg-card border border-border outline-none text-sm focus:border-primary"
+                      />
+                      <label className="block">
+                        <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Subject</span>
+                        <AdminSubjectSelect
+                          value={editRevSubjectId}
+                          onChange={setEditRevSubjectId}
+                          required
+                          className="mt-1 w-full px-3 py-2 rounded-xl bg-card border border-border outline-none text-sm focus:border-primary"
+                        />
+                      </label>
+                      <select
+                        value={editRevLessonId}
+                        onChange={(e) => setEditRevLessonId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-card border border-border outline-none text-sm"
+                      >
+                        <option value="">Link to lesson (optional)</option>
+                        {lessons.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.title}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={savingReviewer}
+                          onClick={() => void saveReviewer()}
+                          className="flex-1 py-2 rounded-xl gradient-primary text-primary-foreground text-xs font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-40"
+                        >
+                          <Save className="h-3.5 w-3.5" /> {savingReviewer ? "Saving…" : "Save changes"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={savingReviewer}
+                          onClick={cancelEditReviewer}
+                          className="flex-1 py-2 rounded-xl border border-border bg-muted text-xs font-semibold inline-flex items-center justify-center gap-1.5"
+                        >
+                          <X className="h-3.5 w-3.5" /> Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   {open && (
                     <div className="border-t border-border p-4 space-y-4 bg-muted/30">
                       {qs.map((question) => (
