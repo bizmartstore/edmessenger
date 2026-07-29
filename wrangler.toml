@@ -13,3 +13,12 @@ run_worker_first = ["/api/*"]
 
 [vars]
 ONESIGNAL_APP_ID = "718bec75-70f7-4936-bdff-5dd26e8c835d"
+
+# Gotchi Tower real-time multiplayer rooms
+[[durable_objects.bindings]]
+name = "GOTCHI_TOWER"
+class_name = "GotchiTowerRoom"
+
+[[migrations]]
+tag = "gotchi_tower_v1"
+new_classes = ["GotchiTowerRoom"]

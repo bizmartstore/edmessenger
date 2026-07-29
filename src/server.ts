@@ -2,6 +2,9 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { GotchiTowerRoom } from "./workers/gotchi-tower-room";
+
+export { GotchiTowerRoom };
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -12,6 +15,7 @@ type EnvBag = {
   ONESIGNAL_REST_API_KEY?: string;
   ONESIGNAL_APP_ID?: string;
   GEMINI_API_KEY?: string;
+  GOTCHI_TOWER?: DurableObjectNamespace;
 };
 
 type CloudflareGlobal = typeof globalThis & {
@@ -74,6 +78,10 @@ function resolveEnv(env: unknown, request?: Request): EnvBag {
       readStringBinding(fromReq, "GEMINI_API_KEY") ||
       readStringBinding(fromNitro, "GEMINI_API_KEY") ||
       fromProcess?.GEMINI_API_KEY,
+    GOTCHI_TOWER:
+      (fromArg?.GOTCHI_TOWER as DurableObjectNamespace | undefined) ??
+      (fromReq?.GOTCHI_TOWER as DurableObjectNamespace | undefined) ??
+      (fromNitro?.GOTCHI_TOWER as DurableObjectNamespace | undefined),
   };
 }
 
@@ -645,6 +653,240 @@ function handleGeminiHealth(envBag: EnvBag): Response {
   return jsonResponse({ ok: true, configured: Boolean(key), keyLength: key.length });
 }
 
+type GenerateTowerBody = {
+  topic?: string;
+  notes?: string;
+  count?: number;
+  difficulty?: string;
+  floorCount?: number;
+};
+
+type GeneratedTowerQuestion = GeneratedQuestion & {
+  hint: string;
+  difficulty: "easy" | "medium" | "hard";
+  category: string;
+  competency: string;
+  estimated_seconds: number;
+  floor_min: number;
+  floor_max: number;
+};
+
+function normalizeTowerQuestions(
+  raw: unknown,
+  count: number,
+  floorCount: number,
+): GeneratedTowerQuestion[] {
+  if (!Array.isArray(raw)) return [];
+  const out: GeneratedTowerQuestion[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const base = normalizeGeneratedQuestions([item], 1)[0];
+    if (!base) continue;
+    const diffRaw = String(o.difficulty ?? "medium").toLowerCase();
+    const difficulty =
+      diffRaw === "easy" || diffRaw === "hard" ? diffRaw : "medium";
+    const floorMin = Math.max(1, Math.min(floorCount, Math.floor(Number(o.floor_min) || 1)));
+    const floorMax = Math.max(
+      floorMin,
+      Math.min(floorCount, Math.floor(Number(o.floor_max) || floorCount)),
+    );
+    out.push({
+      ...base,
+      hint: String(o.hint ?? "").trim(),
+      difficulty,
+      category: String(o.category ?? "general").trim() || "general",
+      competency: String(o.competency ?? o.learning_competency ?? "").trim(),
+      estimated_seconds: Math.max(
+        10,
+        Math.min(120, Math.floor(Number(o.estimated_seconds) || 30)),
+      ),
+      floor_min: floorMin,
+      floor_max: floorMax,
+    });
+    if (out.length >= count) break;
+  }
+  return out;
+}
+
+async function handleGenerateTowerQuestions(request: Request, envBag: EnvBag): Promise<Response> {
+  const origin = request.headers.get("origin");
+  const cors = corsHeaders(origin);
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: cors });
+  }
+  if (request.method !== "POST") {
+    return jsonResponse({ ok: false, error: "Method not allowed" }, 405, cors);
+  }
+
+  const auth = request.headers.get("authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!token || !(await verifyAdmin(token))) {
+    return jsonResponse({ ok: false, error: "Unauthorized" }, 401, cors);
+  }
+
+  const apiKey = envBag.GEMINI_API_KEY?.trim() || "";
+  if (!apiKey) {
+    return jsonResponse(
+      { ok: false, error: "GEMINI_API_KEY not configured on the server" },
+      503,
+      cors,
+    );
+  }
+
+  let payload: GenerateTowerBody;
+  try {
+    payload = (await request.json()) as GenerateTowerBody;
+  } catch {
+    return jsonResponse({ ok: false, error: "Invalid JSON" }, 400, cors);
+  }
+
+  const topic = typeof payload.topic === "string" ? payload.topic.trim() : "";
+  const notes = typeof payload.notes === "string" ? payload.notes.trim() : "";
+  const count = Math.max(1, Math.min(30, Math.floor(Number(payload.count) || 10)));
+  const floorCount = Math.max(5, Math.min(100, Math.floor(Number(payload.floorCount) || 20)));
+  const difficulty = String(payload.difficulty ?? "mixed");
+  if (!topic && !notes) {
+    return jsonResponse({ ok: false, error: "topic or notes required" }, 400, cors);
+  }
+
+  const prompt = `You are an education assistant for Gotchi Tower, a quiz-based educational RPG.
+Create ${count} multiple-choice questions spanning floors 1–${floorCount}.
+
+Topic: ${topic || "(from notes)"}
+Difficulty preference: ${difficulty}
+Lesson notes / source material:
+${notes || "(none — use the topic only)"}
+
+Rules:
+- Exactly 4 options per question
+- One correct answer (correct_index is 0-based)
+- Include explanation, hint, difficulty (easy|medium|hard), category, competency, estimated_seconds (15–60)
+- Assign floor_min and floor_max so easier questions appear on lower floors and harder on higher floors
+- Return ONLY a JSON array (no markdown) shaped like:
+  {"question":"...","options":["...","...","...","..."],"correct_index":0,"explanation":"...","hint":"...","difficulty":"medium","category":"...","competency":"...","estimated_seconds":30,"floor_min":1,"floor_max":5}`;
+
+  const models = [
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+  ];
+
+  try {
+    let lastError = "Gemini request failed";
+    for (const model of models) {
+      const geminiUrl =
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(geminiUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.45,
+            responseMimeType: "application/json",
+          },
+        }),
+      });
+      const text = await res.text();
+      let parsed: unknown = text;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        // keep raw
+      }
+
+      if (!res.ok) {
+        const geminiErr =
+          typeof parsed === "object" && parsed && "error" in (parsed as object)
+            ? (parsed as { error?: { code?: number; message?: string } }).error
+            : undefined;
+        const msg = geminiErr?.message || `Gemini HTTP ${res.status}`;
+        lastError = msg;
+        if (geminiErr?.code === 401 || geminiErr?.code === 403) {
+          return jsonResponse({ ok: false, error: friendlyGeminiError(msg) }, 502, cors);
+        }
+        if (
+          res.status === 404 ||
+          res.status === 429 ||
+          /quota|RESOURCE_EXHAUSTED|not found|NOT_FOUND|no longer available|not supported|deprecated/i.test(
+            msg,
+          )
+        ) {
+          continue;
+        }
+        return jsonResponse({ ok: false, error: friendlyGeminiError(msg) }, 502, cors);
+      }
+
+      const candidates =
+        typeof parsed === "object" && parsed && "candidates" in (parsed as object)
+          ? (parsed as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> })
+              .candidates
+          : undefined;
+      const rawText = candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("\n") ?? "";
+      if (!rawText.trim()) {
+        lastError = `Gemini (${model}) returned empty content`;
+        continue;
+      }
+
+      const questions = normalizeTowerQuestions(extractGeminiJson(rawText), count, floorCount);
+      if (!questions.length) {
+        lastError = `Could not parse Gemini (${model}) questions`;
+        continue;
+      }
+      return jsonResponse({ ok: true, questions, model }, 200, cors);
+    }
+
+    return jsonResponse({ ok: false, error: friendlyGeminiError(lastError) }, 502, cors);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Gemini failed";
+    console.error("generate tower questions failed", err);
+    return jsonResponse({ ok: false, error: friendlyGeminiError(message) }, 502, cors);
+  }
+}
+
+async function handleGotchiTowerWs(request: Request, envBag: EnvBag): Promise<Response> {
+  const url = new URL(request.url);
+  const eventId = url.searchParams.get("event")?.trim();
+  const token = url.searchParams.get("token")?.trim() || "";
+
+  if (!eventId) {
+    return jsonResponse({ ok: false, error: "event required" }, 400);
+  }
+
+  const user = token ? await verifySupabaseUser(token) : null;
+  if (!user) {
+    return jsonResponse({ ok: false, error: "Unauthorized" }, 401);
+  }
+
+  const ns = envBag.GOTCHI_TOWER;
+  if (!ns) {
+    // Fallback: no DO binding in this env — reject upgrade with clear message
+    return jsonResponse(
+      {
+        ok: false,
+        error:
+          "Gotchi Tower multiplayer Durable Object is not bound yet. Redeploy with GOTCHI_TOWER binding.",
+      },
+      503,
+    );
+  }
+
+  const id = ns.idFromName(`tower:${eventId}`);
+  const stub = ns.get(id);
+  const forwardUrl = new URL(request.url);
+  forwardUrl.searchParams.set("userId", user.id);
+  forwardUrl.searchParams.set("name", user.email?.split("@")[0] || "Scholar");
+  return stub.fetch(
+    new Request(forwardUrl.toString(), {
+      method: request.method,
+      headers: request.headers,
+    }),
+  );
+}
+
 async function handleKeepAlive(): Promise<Response> {
   const started = Date.now();
   let supabaseOk = false;
@@ -699,8 +941,16 @@ export default {
         return handleGenerateReviewer(request, envBag);
       }
 
+      if (url.pathname === "/api/ai/generate-tower-questions") {
+        return handleGenerateTowerQuestions(request, envBag);
+      }
+
       if (url.pathname === "/api/ai/gemini-health") {
         return handleGeminiHealth(envBag);
+      }
+
+      if (url.pathname === "/api/gotchi-tower/ws") {
+        return handleGotchiTowerWs(request, envBag);
       }
 
       const handler = await getServerEntry();

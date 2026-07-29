@@ -13,14 +13,19 @@ const EdgotchiApp = lazy(() =>
   import("@/components/games/edgotchi/EdgotchiApp").then((m) => ({ default: m.EdgotchiApp })),
 );
 
+const GotchiTowerApp = lazy(() =>
+  import("@/components/games/gotchi-tower/GotchiTowerApp").then((m) => ({ default: m.GotchiTowerApp })),
+);
+
 export const Route = createFileRoute("/_app/games")({
   component: GamesPage,
 });
 
 type Gate = "checking" | "locked" | "open";
+type ActiveGame = "hub" | "edgotchi" | "gotchi-tower";
 
 function GamesPage() {
-  const [active, setActive] = useState<"hub" | "edgotchi">("hub");
+  const [active, setActive] = useState<ActiveGame>("hub");
   const [gate, setGate] = useState<Gate>("checking");
   const [pass, setPass] = useState("");
   const [unlocking, setUnlocking] = useState(false);
@@ -93,7 +98,7 @@ function GamesPage() {
             <div>
               <h1 className="text-xl font-bold">Games locked</h1>
               <p className="text-xs text-muted-foreground">
-                Your teacher set a password. Enter it to play Edgotchi and other games.
+                Your teacher set a password. Enter it to play Edgotchi, Gotchi Tower, and other games.
               </p>
             </div>
           </header>
@@ -158,6 +163,33 @@ function GamesPage() {
               </span>
             </div>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActive("gotchi-tower")}
+            className="group w-full overflow-hidden rounded-3xl border border-border bg-card text-left shadow-card transition-all hover:shadow-glow active:scale-[0.99]"
+          >
+            <div className="relative h-44 w-full overflow-hidden">
+              <img
+                src="/games/gotchi-tower-cover.svg"
+                alt="Gotchi Tower"
+                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
+              <div className="absolute bottom-3 left-3 right-3">
+                <div className="text-lg font-extrabold tracking-tight text-white">Gotchi Tower</div>
+                <div className="text-[11px] leading-snug text-white/85">
+                  Climb floors · quiz combat · companions · multiplayer PvP · guardian bosses
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between px-3 py-2.5 text-xs">
+              <span className="font-semibold text-primary">Enter tower</span>
+              <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                New
+              </span>
+            </div>
+          </button>
         </div>
       )}
 
@@ -166,6 +198,14 @@ function GamesPage() {
           fallback={<div className="grid min-h-[50vh] place-items-center text-sm text-muted-foreground">Loading Edgotchi…</div>}
         >
           <EdgotchiApp onBack={() => setActive("hub")} />
+        </Suspense>
+      )}
+
+      {gate === "open" && active === "gotchi-tower" && (
+        <Suspense
+          fallback={<div className="grid min-h-[50vh] place-items-center text-sm text-muted-foreground">Loading Gotchi Tower…</div>}
+        >
+          <GotchiTowerApp onBack={() => setActive("hub")} />
         </Suspense>
       )}
     </div>
