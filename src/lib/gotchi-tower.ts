@@ -589,7 +589,8 @@ export function withLoadout(
   const cur = readLoadout(equipment);
   const classId = patch.classId ?? cur.classId;
   const buildId = patch.buildId ?? cur.buildId;
-  const level = patch.level ?? Number(equipment?.tower_level_hint ?? 1) || 1;
+  const fallbackLevel = Number(equipment?.tower_level_hint ?? 1) || 1;
+  const level = patch.level ?? fallbackLevel;
   let unlocked = patch.unlocked ?? cur.unlocked;
   if (patch.classId && patch.classId !== cur.classId) {
     unlocked = unlockedSkillsFor(classId, level);
