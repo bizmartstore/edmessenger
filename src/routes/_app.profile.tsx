@@ -111,9 +111,6 @@ function ProfilePage() {
     }
   }
 
-    })();
-  }, [user]);
-
   async function pickSubject(subject: Subject) {
     if (subjectBusy) return;
     if (subject.has_password && pickingSubject !== subject.id) {

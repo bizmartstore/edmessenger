@@ -378,8 +378,9 @@ end;
 $$;
 grant execute on function public.update_group_avatar(uuid, text) to authenticated;
 
--- Extend list_chat_groups with avatar_url
-create or replace function public.list_chat_groups()
+-- Extend list_chat_groups with avatar_url (must drop first — return type changed)
+drop function if exists public.list_chat_groups();
+create function public.list_chat_groups()
 returns table (
   id uuid,
   name text,
