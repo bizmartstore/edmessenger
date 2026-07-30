@@ -1,9 +1,14 @@
 /** Gotchi Tower — detailed interior floor scene (unique look per theme). */
 import * as Phaser from "phaser";
-import { PALETTE, type Voxel } from "@/lib/edgotchi";
+import { PALETTE, generateWildVoxels, type Voxel } from "@/lib/edgotchi";
 import { themeForFloor, type FloorTheme } from "@/lib/gotchi-tower";
 
-export type FloorEnemySpawn = { id: string; name: string; isBoss: boolean };
+export type FloorEnemySpawn = {
+  id: string;
+  name: string;
+  isBoss: boolean;
+  seed: number;
+};
 
 export type FloorBootData = {
   floor: number;
@@ -12,13 +17,14 @@ export type FloorBootData = {
   playerName: string;
   enemies: FloorEnemySpawn[];
   defeatedEnemyIds: string[];
+  claimedRewardIds: string[];
   portalUnlocked: boolean;
   peers?: Array<{ userId: string; name: string; x: number; y: number; voxels?: Voxel[] }>;
 };
 
 export type FloorInteractEvent =
   | { kind: "quiz_gate"; id: string }
-  | { kind: "monster"; id: string; name: string; isBoss?: boolean }
+  | { kind: "monster"; id: string; name: string; isBoss?: boolean; seed?: number }
   | { kind: "chest"; id: string }
   | { kind: "portal"; locked?: boolean }
   | { kind: "heal" }
@@ -29,28 +35,46 @@ const WORLD_W = 960;
 const WORLD_H = 640;
 const SPEED = 170;
 const FLOOR_Y = WORLD_H - 148;
+const WALK_MIN_X = 110;
+const WALK_MAX_X = WORLD_W - 110;
+const WALK_MIN_Y = FLOOR_Y - 90;
+const WALK_MAX_Y = FLOOR_Y + 20;
+
+type WanderMob = {
+  spr: Phaser.Physics.Arcade.Sprite;
+  label: Phaser.GameObjects.Text;
+  vx: number;
+  vy: number;
+  state: "wander" | "idle";
+  timer: number;
+  homeX: number;
+  homeY: number;
+  radius: number;
+};
 
 function hexToNum(hex: string): number {
   return Phaser.Display.Color.HexStringToColor(hex).color;
+}
+
+function crispTexture(scene: Phaser.Scene, key: string) {
+  if (!scene.textures.exists(key)) return;
+  scene.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
 }
 
 function bakeVoxelTexture(scene: Phaser.Scene, key: string, voxels: Voxel[], scale = 3) {
   if (scene.textures.exists(key)) scene.textures.remove(key);
   const g = scene.make.graphics({ x: 0, y: 0 }, false);
   const cell = scale;
-  // Soft shadow plate under Gotchi
-  g.fillStyle(0x000000, 0.25);
-  g.fillEllipse(4 * cell, 9.5 * cell, 7 * cell, 2 * cell);
+  g.fillStyle(0x000000, 0.35);
+  g.fillRect(3 * cell, 9 * cell, 5 * cell, cell);
   for (const v of voxels) {
     const col = hexToNum(PALETTE[v.c % PALETTE.length]);
     g.fillStyle(col, 1);
     g.fillRect(v.x * cell, v.y * cell, cell, cell);
-    // highlight edge
-    g.fillStyle(0xffffff, 0.18);
-    g.fillRect(v.x * cell, v.y * cell, cell, Math.max(1, cell * 0.25));
   }
   g.generateTexture(key, 8 * cell, 10 * cell);
   g.destroy();
+  crispTexture(scene, key);
 }
 
 function bakeWorldTextures(scene: Phaser.Scene, theme: FloorTheme, floor: number) {
@@ -126,30 +150,24 @@ function bakeWorldTextures(scene: Phaser.Scene, theme: FloorTheme, floor: number
   g.fillRect(8, 10, 32, 4);
   g.generateTexture("gt-chest", 48, 44);
 
-  // Monster variants
+  // Fallback monster silhouette (unique foes use voxel bakes instead)
   for (const variant of ["gt-monster", "gt-monster-boss"] as const) {
     const boss = variant === "gt-monster-boss";
     g.clear();
-    g.fillStyle(0x000000, 0.3);
-    g.fillEllipse(24, 44, 36, 12);
+    g.fillStyle(0x000000, 0.35);
+    g.fillRect(6, 42, 36, 6);
     g.fillStyle(boss ? 0x4a1020 : 0x2a1848, 1);
-    g.fillEllipse(24, 30, boss ? 40 : 32, boss ? 30 : 24);
+    g.fillRect(8, 18, boss ? 32 : 28, boss ? 26 : 22);
     g.fillStyle(boss ? 0xff4466 : theme.accent, 1);
-    g.fillCircle(24, 18, boss ? 16 : 12);
+    g.fillRect(12, 6, 24, 16);
     g.fillStyle(0xffffff, 1);
-    g.fillCircle(18, 16, boss ? 4 : 3);
-    g.fillCircle(30, 16, boss ? 4 : 3);
+    g.fillRect(16, 10, 4, 4);
+    g.fillRect(28, 10, 4, 4);
     g.fillStyle(0x111111, 1);
-    g.fillCircle(18, 16, 1.5);
-    g.fillCircle(30, 16, 1.5);
-    g.fillStyle(boss ? 0xffaa00 : theme.glow, 0.9);
-    g.fillTriangle(24, 4, 16, 14, 32, 14);
-    if (boss) {
-      g.fillStyle(0xff2244, 0.7);
-      g.fillCircle(12, 28, 5);
-      g.fillCircle(36, 28, 5);
-    }
+    g.fillRect(17, 11, 2, 2);
+    g.fillRect(29, 11, 2, 2);
     g.generateTexture(variant, 48, 52);
+    crispTexture(scene, variant);
   }
 
   // Heal shrine
@@ -252,9 +270,47 @@ function bakeWorldTextures(scene: Phaser.Scene, theme: FloorTheme, floor: number
 
   void floor;
   g.destroy();
+  for (const key of [
+    "gt-brick",
+    "gt-tile",
+    "gt-window",
+    "gt-pillar",
+    "gt-torch",
+    "gt-banner",
+    "gt-stairs",
+    "gt-portal",
+    "gt-portal-locked",
+    "gt-chest",
+    "gt-heal",
+    "gt-merchant",
+    "gt-plaque",
+    "gt-spark",
+  ]) {
+    crispTexture(scene, key);
+  }
 }
 
-function drawTowerInterior(scene: Phaser.Scene, theme: FloorTheme, floor: number) {
+/** Solid obstacles the player cannot walk through. */
+function addObstacle(
+  group: Phaser.Physics.Arcade.StaticGroup,
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  const zone = scene.add.zone(x, y, w, h);
+  scene.physics.add.existing(zone, true);
+  group.add(zone);
+  return zone;
+}
+
+function drawTowerInterior(
+  scene: Phaser.Scene,
+  theme: FloorTheme,
+  floor: number,
+  obstacles: Phaser.Physics.Arcade.StaticGroup,
+) {
   // Sky / void beyond windows
   const bg = scene.add.graphics();
   bg.fillGradientStyle(theme.skyTop, theme.skyTop, theme.skyBottom, theme.skyBottom, 1);
@@ -270,7 +326,7 @@ function drawTowerInterior(scene: Phaser.Scene, theme: FloorTheme, floor: number
     }
   }
 
-  // Left & right stone walls
+  // Left & right stone walls (visual + collision on innermost column)
   for (let y = 0; y < FLOOR_Y; y += 32) {
     for (let row = 0; row < 3; row++) {
       scene.add.image(24 + row * 40, y + 16, "gt-brick").setAlpha(0.95 - row * 0.08).setDepth(1);
@@ -281,6 +337,8 @@ function drawTowerInterior(scene: Phaser.Scene, theme: FloorTheme, floor: number
         .setDepth(1);
     }
   }
+  addObstacle(obstacles, scene, 64, FLOOR_Y / 2, 88, FLOOR_Y);
+  addObstacle(obstacles, scene, WORLD_W - 64, FLOOR_Y / 2, 88, FLOOR_Y);
 
   // Arched windows with glow
   const windowXs = [160, 320, 480, 640, 800];
@@ -304,10 +362,13 @@ function drawTowerInterior(scene: Phaser.Scene, theme: FloorTheme, floor: number
     });
   }
 
-  // Pillars
+  // Pillars — solid collision
   for (const x of [120, 280, 520, 720, 860]) {
     scene.add.image(x, FLOOR_Y - 70, "gt-pillar").setDepth(3).setAlpha(0.92);
+    addObstacle(obstacles, scene, x, FLOOR_Y - 55, 28, 100);
   }
+  // Stairs block
+  addObstacle(obstacles, scene, WORLD_W - 120, FLOOR_Y - 10, 70, 50);
 
   // Torches
   for (const x of [90, 250, 470, 690, 880]) {
@@ -382,6 +443,8 @@ class FloorScene extends Phaser.Scene {
     D: Phaser.Input.Keyboard.Key;
   };
   private interactables: Phaser.Physics.Arcade.StaticGroup | null = null;
+  private obstacles: Phaser.Physics.Arcade.StaticGroup | null = null;
+  private wanderMobs: WanderMob[] = [];
   private peerSprites = new Map<string, Phaser.GameObjects.Container>();
   private prompt?: Phaser.GameObjects.Text;
   private nearTarget: FloorInteractEvent | null = null;
@@ -415,13 +478,16 @@ class FloorScene extends Phaser.Scene {
       3,
     );
 
-    drawTowerInterior(this, theme, this.boot.floor);
+    this.obstacles = this.physics.add.staticGroup();
+    drawTowerInterior(this, theme, this.boot.floor, this.obstacles);
 
-    this.physics.world.setBounds(70, 40, WORLD_W - 140, WORLD_H - 60);
+    this.physics.world.setBounds(WALK_MIN_X - 20, 40, WALK_MAX_X - WALK_MIN_X + 40, WORLD_H - 60);
     this.player = this.physics.add.sprite(WORLD_W / 2, FLOOR_Y - 10, "gt-player");
     this.player.setCollideWorldBounds(true);
     this.player.setDepth(12);
     this.player.setScale(1.25);
+    this.player.setBounce(0);
+    this.physics.add.collider(this.player, this.obstacles);
 
     const nameTag = this.add
       .text(this.player.x, this.player.y - 40, this.boot.playerName, {
@@ -435,7 +501,6 @@ class FloorScene extends Phaser.Scene {
       .setDepth(13);
     this.player.setData("nameTag", nameTag);
 
-    // Soft bob idle
     this.tweens.add({
       targets: this.player,
       scaleY: { from: 1.25, to: 1.3 },
@@ -446,6 +511,7 @@ class FloorScene extends Phaser.Scene {
     });
 
     this.interactables = this.physics.add.staticGroup();
+    this.wanderMobs = [];
     this.spawnInteractables();
 
     this.cursors = this.input.keyboard!.createCursorKeys();
@@ -454,6 +520,7 @@ class FloorScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     this.cameras.main.setZoom(1.08);
+    this.cameras.main.roundPixels = true;
 
     this.prompt = this.add
       .text(0, 0, "", {
@@ -528,6 +595,7 @@ class FloorScene extends Phaser.Scene {
   private spawnInteractables() {
     const theme = this.theme;
     const unlocked = this.boot.portalUnlocked;
+    const claimed = new Set(this.boot.claimedRewardIds ?? []);
 
     const portal = this.interactables!.create(
       WORLD_W - 90,
@@ -549,46 +617,82 @@ class FloorScene extends Phaser.Scene {
       portal.setAlpha(0.75);
     }
 
-    const chest = this.interactables!.create(400, FLOOR_Y - 8, "gt-chest") as Phaser.Physics.Arcade.Sprite;
-    chest.setData("evt", { kind: "chest", id: `chest-${this.boot.floor}` } satisfies FloorInteractEvent);
-    chest.setDepth(8);
-    this.tweens.add({ targets: chest, y: chest.y - 5, duration: 750, yoyo: true, repeat: -1 });
+    const chestId = `chest-${this.boot.floor}`;
+    if (!claimed.has(chestId)) {
+      const chest = this.interactables!.create(400, FLOOR_Y - 8, "gt-chest") as Phaser.Physics.Arcade.Sprite;
+      chest.setData("evt", { kind: "chest", id: chestId } satisfies FloorInteractEvent);
+      chest.setDepth(8);
+      this.tweens.add({ targets: chest, y: chest.y - 5, duration: 750, yoyo: true, repeat: -1 });
+      if (this.obstacles) addObstacle(this.obstacles, this, 400, FLOOR_Y - 8, 40, 36);
+    } else {
+      const empty = this.add.image(400, FLOOR_Y - 8, "gt-chest").setDepth(7).setAlpha(0.35).setTint(0x666666);
+      this.add
+        .text(400, FLOOR_Y - 36, "Opened", {
+          fontSize: "9px",
+          color: "#aaa",
+          stroke: "#000",
+          strokeThickness: 2,
+        })
+        .setOrigin(0.5)
+        .setDepth(8);
+      void empty;
+    }
 
     const heal = this.interactables!.create(540, FLOOR_Y - 10, "gt-heal") as Phaser.Physics.Arcade.Sprite;
     heal.setData("evt", { kind: "heal" } satisfies FloorInteractEvent);
     heal.setDepth(8);
+    if (this.obstacles) addObstacle(this.obstacles, this, 540, FLOOR_Y - 10, 36, 40);
 
     const merchant = this.interactables!.create(680, FLOOR_Y - 10, "gt-merchant") as Phaser.Physics.Arcade.Sprite;
     merchant.setData("evt", { kind: "merchant" } satisfies FloorInteractEvent);
     merchant.setDepth(8);
+    if (this.obstacles) addObstacle(this.obstacles, this, 680, FLOOR_Y - 10, 40, 40);
 
-    // Optional side quiz shrine (bonus, does not ascend)
-    const shrine = this.interactables!.create(200, FLOOR_Y - 18, "gt-portal") as Phaser.Physics.Arcade.Sprite;
-    shrine.setTint(theme.accent);
-    shrine.setScale(0.75);
-    shrine.setAlpha(0.85);
-    shrine.setData("evt", {
-      kind: "quiz_gate",
-      id: `shrine-${this.boot.floor}`,
-    } satisfies FloorInteractEvent);
-    shrine.setDepth(8);
+    const shrineId = `shrine-${this.boot.floor}`;
+    if (!claimed.has(shrineId)) {
+      const shrine = this.interactables!.create(200, FLOOR_Y - 18, "gt-portal") as Phaser.Physics.Arcade.Sprite;
+      shrine.setTint(theme.accent);
+      shrine.setScale(0.75);
+      shrine.setAlpha(0.85);
+      shrine.setData("evt", {
+        kind: "quiz_gate",
+        id: shrineId,
+      } satisfies FloorInteractEvent);
+      shrine.setDepth(8);
+      if (this.obstacles) addObstacle(this.obstacles, this, 200, FLOOR_Y - 18, 36, 48);
+    } else {
+      this.add
+        .image(200, FLOOR_Y - 18, "gt-portal")
+        .setTint(0x555555)
+        .setScale(0.75)
+        .setAlpha(0.4)
+        .setDepth(7);
+      this.add
+        .text(200, FLOOR_Y - 48, "Claimed", {
+          fontSize: "9px",
+          color: "#aaa",
+          stroke: "#000",
+          strokeThickness: 2,
+        })
+        .setOrigin(0.5)
+        .setDepth(8);
+    }
 
     const alive = this.boot.enemies.filter((e) => !this.boot.defeatedEnemyIds.includes(e.id));
     alive.forEach((enemy, i) => {
-      const x = 260 + i * 110;
-      const y = FLOOR_Y - 40 - (enemy.isBoss ? 10 : 0);
-      const spr = this.interactables!.create(
-        x,
-        y,
-        enemy.isBoss ? "gt-monster-boss" : "gt-monster",
-      ) as Phaser.Physics.Arcade.Sprite;
-      spr.setScale(enemy.isBoss ? 1.45 : 1.1);
+      const x = Phaser.Math.Clamp(240 + i * 130 + (enemy.seed % 40), WALK_MIN_X + 40, WALK_MAX_X - 80);
+      const y = FLOOR_Y - 40 - (enemy.isBoss ? 10 : 0) + ((enemy.seed >> 3) % 20) - 10;
+      const texKey = `gt-foe-${enemy.id}`;
+      bakeVoxelTexture(this, texKey, generateWildVoxels(enemy.seed), enemy.isBoss ? 4 : 3);
+      const spr = this.interactables!.create(x, y, texKey) as Phaser.Physics.Arcade.Sprite;
+      spr.setScale(enemy.isBoss ? 1.55 : 1.2);
       spr.setDepth(9);
       spr.setData("evt", {
         kind: "monster",
         id: enemy.id,
         name: enemy.name,
         isBoss: enemy.isBoss,
+        seed: enemy.seed,
       } satisfies FloorInteractEvent);
       const label = this.add
         .text(x, y - 36, enemy.name, {
@@ -600,15 +704,62 @@ class FloorScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(10);
       spr.setData("label", label);
-      this.tweens.add({
-        targets: [spr, label],
-        x: x + (enemy.isBoss ? 36 : 50),
-        duration: enemy.isBoss ? 2400 : 1700,
-        yoyo: true,
-        repeat: -1,
-        ease: "Sine.easeInOut",
+      this.wanderMobs.push({
+        spr,
+        label,
+        vx: 0,
+        vy: 0,
+        state: "idle",
+        timer: 400 + (enemy.seed % 900),
+        homeX: x,
+        homeY: y,
+        radius: enemy.isBoss ? 70 : 90,
       });
     });
+  }
+
+  private tickWander(delta: number) {
+    for (const mob of this.wanderMobs) {
+      if (!mob.spr.active) continue;
+      mob.timer -= delta;
+      if (mob.timer <= 0) {
+        if (mob.state === "idle") {
+          mob.state = "wander";
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 28 + Math.random() * 42;
+          mob.vx = Math.cos(angle) * speed;
+          mob.vy = Math.sin(angle) * speed * 0.55;
+          mob.timer = 700 + Math.random() * 1600;
+        } else {
+          mob.state = "idle";
+          mob.vx = 0;
+          mob.vy = 0;
+          mob.homeY = mob.spr.y;
+          mob.homeX = mob.spr.x;
+          mob.timer = 500 + Math.random() * 1400;
+        }
+      }
+      if (mob.state === "wander") {
+        let nx = mob.spr.x + (mob.vx * delta) / 1000;
+        let ny = mob.spr.y + (mob.vy * delta) / 1000;
+        const dx = nx - mob.homeX;
+        const dy = ny - mob.homeY;
+        if (dx * dx + dy * dy > mob.radius * mob.radius) {
+          mob.vx *= -1;
+          mob.vy *= -1;
+          nx = mob.spr.x + (mob.vx * delta) / 1000;
+          ny = mob.spr.y + (mob.vy * delta) / 1000;
+        }
+        nx = Phaser.Math.Clamp(nx, WALK_MIN_X, WALK_MAX_X);
+        ny = Phaser.Math.Clamp(ny, WALK_MIN_Y, WALK_MAX_Y);
+        mob.spr.setPosition(nx, ny);
+        if (mob.vx !== 0) mob.spr.setFlipX(mob.vx < 0);
+      } else {
+        const bob = Math.sin(this.time.now / 320 + mob.homeX * 0.01) * 2;
+        mob.spr.setPosition(mob.spr.x, mob.homeY + bob);
+      }
+      mob.label.setPosition(mob.spr.x, mob.spr.y - 36);
+    }
   }
 
   private onPeers = (
@@ -673,8 +824,10 @@ class FloorScene extends Phaser.Scene {
     }
   }
 
-  update() {
+  update(_time: number, delta: number) {
     if (!this.player?.body) return;
+    this.tickWander(delta);
+
     let vx = 0;
     let vy = 0;
     if (this.cursors.left.isDown || this.wasd.A.isDown) vx -= 1;
@@ -708,6 +861,7 @@ class FloorScene extends Phaser.Scene {
     let best = 9999;
     this.interactables?.getChildren().forEach((obj) => {
       const spr = obj as Phaser.Physics.Arcade.Sprite;
+      if (!spr.active || !spr.getData("evt")) return;
       const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, spr.x, spr.y);
       if (d < 56 && d < best) {
         best = d;
@@ -759,6 +913,9 @@ export function createGotchiTowerFloorGame(
     width: Math.min(parent.clientWidth || 960, 960),
     height: Math.min(parent.clientHeight || 520, 560),
     backgroundColor: "#0b1220",
+    pixelArt: true,
+    roundPixels: true,
+    antialias: false,
     physics: { default: "arcade", arcade: { debug: false } },
     scale: {
       mode: Phaser.Scale.FIT,
@@ -766,6 +923,7 @@ export function createGotchiTowerFloorGame(
     },
     scene: [],
   });
+  parent.querySelector("canvas")?.style.setProperty("image-rendering", "pixelated");
   game.scene.add("FloorScene", FloorScene, true, data);
   return game;
 }

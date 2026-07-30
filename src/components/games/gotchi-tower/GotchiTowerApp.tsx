@@ -6,16 +6,21 @@ import {
   Coins,
   Heart,
   Loader2,
+  MessageCircle,
   Sparkles,
   Swords,
   Trophy,
   Users,
+  X,
   Zap,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import type { Voxel } from "@/lib/edgotchi";
+import { generateWildVoxels } from "@/lib/edgotchi";
 import { VoxelPainter, VoxelPreview } from "@/components/games/edgotchi/VoxelPainter";
 import {
+  ATTR_BEATS,
+  ATTR_KEYS,
   ATTR_LABELS,
   GOTCHI_BUILDS,
   GOTCHI_CLASSES,
@@ -27,6 +32,7 @@ import {
   defaultLoadout,
   derivedStats,
   enemiesForFloor,
+  foeAttrsFor,
   foeMaxHpFor,
   foeRetaliationDamage,
   getTowerEvent,
@@ -35,19 +41,24 @@ import {
   listStudentTowerEvents,
   loadApprovedQuestionsForFloor,
   loadTowerAvatar,
+  pickFoeAttr,
   rankTowerPlayers,
+  readClaimedRewards,
   readFloorProgress,
   readLoadout,
+  resolveAttrClash,
   saveTowerAvatar,
   skillsLearnedAtLevel,
   themeForFloor,
   towerWsUrl,
   updateTowerPlayer,
+  withClaimedReward,
   withFloorProgress,
   withLoadout,
   xpToNextLevel,
   type GotchiBuildId,
   type GotchiClassId,
+  type TowerAttrs,
   type TowerAvatar,
   type TowerEvent,
   type TowerPlayer,
@@ -148,7 +159,13 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
   const [pendingJoinCode, setPendingJoinCode] = useState<string | null>(null);
   const [wsStatus, setWsStatus] = useState<"off" | "connecting" | "live" | "fallback">("off");
   const [defeatedOnFloor, setDefeatedOnFloor] = useState<string[]>([]);
+  const [claimedOnFloor, setClaimedOnFloor] = useState<string[]>([]);
   const [activeEnemyId, setActiveEnemyId] = useState<string | null>(null);
+  const [activeEnemySeed, setActiveEnemySeed] = useState<number>(1);
+  const [foeAttrs, setFoeAttrs] = useState<TowerAttrs | null>(null);
+  const [attrPickOpen, setAttrPickOpen] = useState(false);
+  const [pendingCombatCorrect, setPendingCombatCorrect] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [showBoard, setShowBoard] = useState(true);
   const [paidEdit, setPaidEdit] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<TowerSkillId | null>(null);
@@ -163,6 +180,8 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
   const battleGameRef = useRef<PhaserBridge | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const moveTimer = useRef<number | null>(null);
+  const pendingRewardIdRef = useRef<string | null>(null);
+  const pendingPlayerRef = useRef<TowerPlayer | null>(null);
 
   const refreshEvents = useCallback(async () => {
     if (!profile?.selected_subject_id) {
@@ -458,6 +477,7 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       toast.message("Waiting for the teacher to start the tower…");
     }
     setDefeatedOnFloor(readFloorProgress(player.equipment, player.floor));
+    setClaimedOnFloor(readClaimedRewards(player.equipment, player.floor));
     try {
       const qs = await loadApprovedQuestionsForFloor(event.id, player.floor);
       setQuestions(qs.length ? qs : FALLBACK_QUESTIONS);
@@ -488,6 +508,7 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
         playerName: player.gotchi_name || player.display_name,
         enemies: enemiesForFloor(player.floor),
         defeatedEnemyIds: defeatedOnFloor,
+        claimedRewardIds: claimedOnFloor,
         portalUnlocked:
           enemiesForFloor(player.floor).every((e) => defeatedOnFloor.includes(e.id)),
         peers: peers
@@ -528,7 +549,7 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       floorGameRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, player?.id, player?.floor, defeatedOnFloor.join("|")]);
+  }, [screen, player?.id, player?.floor, defeatedOnFloor.join("|"), claimedOnFloor.join("|")]);
 
   useEffect(() => {
     if (screen !== "battle" || !battleHostRef.current || !player) return;
@@ -540,6 +561,8 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
         playerName: player.gotchi_name,
         foeName,
         voxels: player.voxels?.length ? player.voxels : voxels,
+        foeVoxels: generateWildVoxels(activeEnemySeed),
+        foeSeed: activeEnemySeed,
         floor: player.floor,
         isBoss: battleMode === "boss",
         isPvp: battleMode === "pvp",
@@ -550,7 +573,7 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       battleGameRef.current?.destroy(true);
       battleGameRef.current = null;
     };
-  }, [screen, battleMode, foeName, player, voxels]);
+  }, [screen, battleMode, foeName, player, voxels, activeEnemySeed]);
 
   function pickQuestion(): TowerQuestion {
     const pool = questions.length ? questions : FALLBACK_QUESTIONS;
@@ -572,12 +595,19 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       return;
     }
     if (evt.kind === "quiz_gate") {
-      // Bonus shrine — rewards only, does not ascend
-      openQuiz("chest", "Knowledge Shrine");
+      if (claimedOnFloor.includes(evt.id)) {
+        toast.message("This Knowledge Shrine was already claimed");
+        return;
+      }
+      openQuiz("chest", "Knowledge Shrine", evt.id);
       return;
     }
     if (evt.kind === "chest") {
-      openQuiz("chest", "Treasure Seal");
+      if (claimedOnFloor.includes(evt.id)) {
+        toast.message("This chest was already opened");
+        return;
+      }
+      openQuiz("chest", "Treasure Seal", evt.id);
       return;
     }
     if (evt.kind === "heal") {
@@ -597,8 +627,14 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       return;
     }
     if (evt.kind === "monster") {
+      const seed = evt.seed ?? ((player.floor * 9973 + evt.id.length * 13) >>> 0);
       setActiveEnemyId(evt.id);
-      await beginBattle(evt.isBoss || player.floor % 10 === 0 ? "boss" : "monster", evt.name);
+      setActiveEnemySeed(seed);
+      await beginBattle(
+        evt.isBoss || player.floor % 10 === 0 ? "boss" : "monster",
+        evt.name,
+        seed,
+      );
       return;
     }
     if (evt.kind === "challenge_peer") {
@@ -614,27 +650,32 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
     }
   }
 
-  function openQuiz(mode: BattleMode, label: string) {
+  function openQuiz(mode: BattleMode, label: string, rewardId?: string) {
     setBattleMode(mode);
     setFoeName(label);
+    pendingRewardIdRef.current = rewardId ?? null;
     setQuiz(pickQuestion());
     setQuizOpen(true);
     setPendingAction("attack");
   }
 
-  async function beginBattle(mode: BattleMode, name: string) {
+  async function beginBattle(mode: BattleMode, name: string, seed?: number) {
     if (!player) return;
     if (mode === "pvp") setActiveEnemyId(null);
+    const foeSeed = seed ?? activeEnemySeed ?? ((player.floor * 9973) >>> 0);
+    setActiveEnemySeed(foeSeed);
     setBattleMode(mode);
     setFoeName(name);
-    const max = foeMaxHpFor(
-      player.floor,
-      mode === "boss" ? "boss" : mode === "pvp" ? "pvp" : "monster",
-    );
+    const combatMode = mode === "boss" ? "boss" : mode === "pvp" ? "pvp" : "monster";
+    const max = foeMaxHpFor(player.floor, combatMode);
     setFoeMaxHp(max);
     setFoeHp(max);
+    const attrs = foeAttrsFor(player.floor, combatMode, foeSeed);
+    setFoeAttrs(attrs);
+    setAttrPickOpen(false);
+    setPendingCombatCorrect(false);
     setBattleLog([
-      `${name} bars the way on floor ${player.floor}! Higher floors hit harder — answer quizzes to fight.`,
+      `${name} bars the way on floor ${player.floor}! Answer correctly, then pick an attribute to clash.`,
     ]);
     setScreen("battle");
     setQuiz(pickQuestion());
@@ -714,14 +755,27 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
             return;
           }
           next.floor = Math.min(event?.floor_count ?? 20, next.floor + 1);
-          next.equipment = withFloorProgress(next.equipment, next.floor, []);
+          next.equipment = withFloorProgress(next.equipment, next.floor, [], []);
           setDefeatedOnFloor([]);
+          setClaimedOnFloor([]);
           toast.success(`Ascended to floor ${next.floor} · ${themeForFloor(next.floor).name}`);
           wsRef.current?.send(JSON.stringify({ type: "floor_advance", floor: next.floor }));
           awardGcoins("complete_reviewer", `gt-floor-${event?.id}-${next.floor}`);
         } else {
+          const rewardId = pendingRewardIdRef.current;
+          if (rewardId && claimedOnFloor.includes(rewardId)) {
+            toast.message("Already claimed — find another floor");
+            setPendingAction(null);
+            return;
+          }
           next.inventory = [...next.inventory, { id: `relic-${Date.now()}`, name: "Tower Relic" }];
           next.gcoins_earned += 2;
+          if (rewardId) {
+            next.equipment = withClaimedReward(next.equipment, next.floor, rewardId);
+            const claimed = [...new Set([...claimedOnFloor, rewardId])];
+            setClaimedOnFloor(claimed);
+          }
+          pendingRewardIdRef.current = null;
           toast.success("Treasure unlocked!");
         }
       }
@@ -752,7 +806,24 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       return;
     }
 
-    // Combat resolution
+    // Combat: wrong answer → weak hit + hard retaliation; correct → attribute clash pick
+    setPlayer(next);
+    await persistPlayer(next);
+    pendingPlayerRef.current = next;
+
+    if (!correct) {
+      await resolveMissedRound(next);
+      return;
+    }
+
+    setPendingCombatCorrect(true);
+    setAttrPickOpen(true);
+  }
+
+  async function resolveMissedRound(next: TowerPlayer) {
+    const loadout = readLoadout({ ...next.equipment, tower_level_hint: next.level });
+    const isPvp = battleMode === "pvp";
+    const buildMul = buildMultipliers(loadout.buildId, isPvp);
     const stats = derivedStats({
       knowledge: next.knowledge,
       resolve: next.resolve,
@@ -763,8 +834,51 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
     });
     const combatMode =
       battleMode === "boss" ? "boss" : battleMode === "pvp" ? "pvp" : "monster";
-    const defense =
-      stats.defense * classDefenseMod(loadout.classId) * buildMul.def;
+    const defense = stats.defense * classDefenseMod(loadout.classId) * buildMul.def;
+    const dmg = Math.floor(4 + Math.random() * 5);
+    const newFoe = Math.max(0, foeHp - dmg);
+    setFoeHp(newFoe);
+    setBattleLog((l) => [...l, `Missed quiz — weak hit for ${dmg}.`]);
+    battleGameRef.current?.events.emit("gt-battle-vfx", {
+      type: "hit",
+      target: "enemy",
+      amount: dmg,
+      vfx: "slash",
+    });
+    const retal = foeRetaliationDamage(next.floor, combatMode, defense, true);
+    next = { ...next, hp: Math.max(0, next.hp - retal) };
+    battleGameRef.current?.events.emit("gt-battle-vfx", {
+      type: "hit",
+      target: "player",
+      amount: retal,
+      vfx: "slash",
+    });
+    setBattleLog((l) => [...l, `${foeName} retaliates for ${retal}!`]);
+    await finishRoundAfterDamage(next, newFoe);
+  }
+
+  async function chooseBattleAttr(choice: keyof TowerAttrs) {
+    if (!pendingAction || !pendingCombatCorrect) return;
+    const base = pendingPlayerRef.current ?? player;
+    if (!base) return;
+    setAttrPickOpen(false);
+    setPendingCombatCorrect(false);
+
+    let next = { ...base };
+    const loadout = readLoadout({ ...next.equipment, tower_level_hint: next.level });
+    const isPvp = battleMode === "pvp";
+    const buildMul = buildMultipliers(loadout.buildId, isPvp);
+    const stats = derivedStats({
+      knowledge: next.knowledge,
+      resolve: next.resolve,
+      agility: next.agility,
+      insight: next.insight,
+      spirit: next.spirit,
+      harmony: next.harmony,
+    });
+    const combatMode =
+      battleMode === "boss" ? "boss" : battleMode === "pvp" ? "pvp" : "monster";
+    const defense = stats.defense * classDefenseMod(loadout.classId) * buildMul.def;
     const skillId: TowerSkillId | null =
       pendingAction === "skill"
         ? selectedSkill && loadout.unlocked.includes(selectedSkill)
@@ -777,161 +891,176 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
     const treatAsHeal =
       pendingAction === "heal" || skillDef?.kind === "heal" || skillDef?.kind === "buff";
 
+    const playerAttrs: TowerAttrs = {
+      knowledge: next.knowledge,
+      resolve: next.resolve,
+      agility: next.agility,
+      insight: next.insight,
+      spirit: next.spirit,
+      harmony: next.harmony,
+    };
+    const enemyAttrs =
+      foeAttrs ??
+      foeAttrsFor(next.floor, combatMode, activeEnemySeed);
+    const foeChoice = pickFoeAttr(enemyAttrs, choice);
+
     if (treatAsHeal) {
       const cost = skillDef?.energyCost ?? 8;
-      if (correct && next.energy < cost) {
+      if (next.energy < cost) {
         toast.error("Not enough energy");
         setPendingAction(null);
-        setPlayer(next);
-        await persistPlayer(next);
         return;
       }
-      if (correct) {
-        const heal = Math.floor(
-          stats.healPower * (skillDef?.power ?? 1) * buildMul.heal * (skillDef?.kind === "buff" ? 0.5 : 1),
-        );
-        next.hp = Math.min(next.max_hp, next.hp + heal);
-        next.energy = Math.max(0, next.energy - cost);
-        setBattleLog((l) => [...l, `${skillDef?.name ?? "Heal"} restores ${heal} HP.`]);
-        battleGameRef.current?.events.emit("gt-battle-vfx", {
-          type: "heal",
-          amount: heal,
-          vfx: skillDef?.vfx ?? "heal",
-        });
-        if (skillDef?.kind === "buff") {
-          const poke = Math.floor(stats.skillPower * 0.5 * buildMul.dmg * classDamageMod(loadout.classId));
-          const newFoe = Math.max(0, foeHp - poke);
-          setFoeHp(newFoe);
-          battleGameRef.current?.events.emit("gt-battle-vfx", {
-            type: "hit",
-            target: "enemy",
-            amount: poke,
-            vfx: skillDef.vfx,
-            skill: skillDef.name,
-          });
-          if (newFoe <= 0) {
-            next.battles_won += 1;
-            next.xp += 18;
-            next.gcoins_earned += 3;
-            battleGameRef.current?.events.emit("gt-battle-vfx", { type: "win" });
-            if (activeEnemyId) {
-              const defeated = [...new Set([...defeatedOnFloor, activeEnemyId])];
-              setDefeatedOnFloor(defeated);
-              next.equipment = withFloorProgress(next.equipment, next.floor, defeated);
-            }
-            setActiveEnemyId(null);
-            setPlayer(next);
-            await persistPlayer(next);
-            setTimeout(() => setScreen("floor"), 800);
-            setPendingAction(null);
-            return;
-          }
-        }
-      } else {
-        const retal = foeRetaliationDamage(player.floor, combatMode, defense, true);
-        next.hp = Math.max(0, next.hp - retal);
-        setBattleLog((l) => [...l, `Heal fizzled — ${foeName} strikes for ${retal}!`]);
-        battleGameRef.current?.events.emit("gt-battle-vfx", {
-          type: "hit",
-          target: "player",
-          amount: retal,
-          vfx: "slash",
-        });
-      }
-    } else {
-      const cost = skillDef?.energyCost ?? 0;
-      if (correct && skillDef && next.energy < cost) {
-        toast.error("Not enough energy for that skill");
-        setPendingAction(null);
-        setPlayer(next);
-        await persistPlayer(next);
-        return;
-      }
-      const power = skillDef?.power ?? 1;
-      let crit = false;
-      let dmg = 0;
-      if (correct) {
-        crit =
-          Math.random() <
-          stats.critChance * (loadout.classId === "striker" ? 1.25 : 1);
-        dmg = Math.floor(
-          stats.skillPower *
-            power *
-            classDamageMod(loadout.classId) *
-            buildMul.dmg *
-            (crit ? 1.65 : 1) *
-            (skillDef?.id === "execute" && foeHp / Math.max(1, foeMaxHp) < 0.4 ? 1.35 : 1),
-        );
-        if (skillDef) next.energy = Math.max(0, next.energy - cost);
-      } else {
-        dmg = Math.floor(4 + Math.random() * 5);
-      }
-      const newFoe = Math.max(0, foeHp - dmg);
-      setFoeHp(newFoe);
+      const heal = Math.floor(
+        stats.healPower * (skillDef?.power ?? 1) * buildMul.heal * (skillDef?.kind === "buff" ? 0.5 : 1),
+      );
+      next.hp = Math.min(next.max_hp, next.hp + heal);
+      next.energy = Math.max(0, next.energy - cost);
       setBattleLog((l) => [
         ...l,
-        correct
-          ? `${skillDef?.name ?? "Attack"} deals ${dmg}${crit ? " CRIT" : ""}!`
-          : `Missed quiz — weak hit for ${dmg}.`,
+        `${skillDef?.name ?? "Heal"} restores ${heal} HP · you chose ${ATTR_LABELS[choice].label}.`,
       ]);
       battleGameRef.current?.events.emit("gt-battle-vfx", {
-        type: "hit",
-        target: "enemy",
-        amount: dmg,
-        crit,
-        vfx: skillDef?.vfx ?? "slash",
-        skill: skillDef?.name,
+        type: "heal",
+        amount: heal,
+        vfx: skillDef?.vfx ?? "heal",
       });
-      if (!correct) {
-        const retal = foeRetaliationDamage(player.floor, combatMode, defense, true);
-        next.hp = Math.max(0, next.hp - retal);
+      if (skillDef?.kind === "buff") {
+        const crit = Math.random() < stats.critChance;
+        const clash = resolveAttrClash(playerAttrs, enemyAttrs, choice, foeChoice, {
+          classMod: classDamageMod(loadout.classId),
+          buildMul: buildMul.dmg,
+          skillPower: stats.skillPower,
+          skillPowerMul: 0.5,
+          crit,
+        });
+        const newFoe = Math.max(0, foeHp - clash.damage);
+        setFoeHp(newFoe);
+        setBattleLog((l) => [
+          ...l,
+          attrClashLine(choice, foeChoice, clash),
+        ]);
         battleGameRef.current?.events.emit("gt-battle-vfx", {
           type: "hit",
-          target: "player",
-          amount: retal,
-          vfx: "slash",
+          target: "enemy",
+          amount: clash.damage,
+          crit,
+          vfx: skillDef.vfx,
+          skill: skillDef.name,
         });
-        setBattleLog((l) => [...l, `${foeName} retaliates for ${retal}!`]);
-      } else if (newFoe > 0) {
-        const retal = foeRetaliationDamage(player.floor, combatMode, defense, false);
-        next.hp = Math.max(0, next.hp - retal);
-        battleGameRef.current?.events.emit("gt-battle-vfx", {
-          type: "hit",
-          target: "player",
-          amount: retal,
-          vfx: "slash",
-        });
-        setBattleLog((l) => [...l, `${foeName} counters for ${retal}!`]);
-      }
-
-      if (newFoe <= 0) {
-        next.battles_won += 1;
-        next.xp += battleMode === "boss" ? 40 : 18;
-        next.gcoins_earned += battleMode === "boss" ? 10 : 3 + Math.floor(player.floor / 5);
-        battleGameRef.current?.events.emit("gt-battle-vfx", { type: "win" });
-        toast.success(`${foeName} defeated!`);
-
-        if (activeEnemyId && (battleMode === "monster" || battleMode === "boss")) {
-          const defeated = [...new Set([...defeatedOnFloor, activeEnemyId])];
-          setDefeatedOnFloor(defeated);
-          next.equipment = withFloorProgress(next.equipment, next.floor, defeated);
-          const required = enemiesForFloor(next.floor);
-          if (required.every((e) => defeated.includes(e.id))) {
-            toast.success("Floor cleared! The ascend portal unlocks.");
-          }
-          if (battleMode === "boss") {
-            next.titles = [...new Set([...next.titles, `Guardian Slayer ${player.floor}`])];
-            awardGcoins("complete_reviewer", `gt-boss-${event?.id}-${player.floor}`);
-          }
+        if (newFoe > 0) {
+          const retal = foeRetaliationDamage(next.floor, combatMode, defense, false);
+          next.hp = Math.max(0, next.hp - retal);
+          setBattleLog((l) => [...l, `${foeName} counters for ${retal}!`]);
+          battleGameRef.current?.events.emit("gt-battle-vfx", {
+            type: "hit",
+            target: "player",
+            amount: retal,
+            vfx: "slash",
+          });
         }
-
-        setActiveEnemyId(null);
-        setPlayer(next);
-        await persistPlayer(next);
-        setTimeout(() => setScreen("floor"), 800);
-        setPendingAction(null);
+        await finishRoundAfterDamage(next, newFoe);
         return;
       }
+      const retal = foeRetaliationDamage(next.floor, combatMode, defense, false);
+      next.hp = Math.max(0, next.hp - retal);
+      setBattleLog((l) => [...l, `${foeName} presses in for ${retal}!`]);
+      battleGameRef.current?.events.emit("gt-battle-vfx", {
+        type: "hit",
+        target: "player",
+        amount: retal,
+        vfx: "slash",
+      });
+      await finishRoundAfterDamage(next, foeHp);
+      return;
+    }
+
+    const cost = skillDef?.energyCost ?? 0;
+    if (skillDef && next.energy < cost) {
+      toast.error("Not enough energy for that skill");
+      setPendingAction(null);
+      return;
+    }
+    const crit =
+      Math.random() <
+      stats.critChance * (loadout.classId === "striker" ? 1.25 : 1);
+    const clash = resolveAttrClash(playerAttrs, enemyAttrs, choice, foeChoice, {
+      classMod: classDamageMod(loadout.classId),
+      buildMul: buildMul.dmg,
+      skillPower: stats.skillPower,
+      skillPowerMul:
+        (skillDef?.power ?? 1) *
+        (skillDef?.id === "execute" && foeHp / Math.max(1, foeMaxHp) < 0.4 ? 1.35 : 1),
+      crit,
+    });
+    if (skillDef) next.energy = Math.max(0, next.energy - cost);
+    const newFoe = Math.max(0, foeHp - clash.damage);
+    setFoeHp(newFoe);
+    setBattleLog((l) => [
+      ...l,
+      `${skillDef?.name ?? "Attack"} · ${attrClashLine(choice, foeChoice, clash)}${crit ? " CRIT!" : ""}`,
+    ]);
+    battleGameRef.current?.events.emit("gt-battle-vfx", {
+      type: "hit",
+      target: "enemy",
+      amount: clash.damage,
+      crit,
+      vfx: skillDef?.vfx ?? "slash",
+      skill: skillDef?.name,
+    });
+    if (newFoe > 0) {
+      const retal = foeRetaliationDamage(next.floor, combatMode, defense, false);
+      next.hp = Math.max(0, next.hp - retal);
+      battleGameRef.current?.events.emit("gt-battle-vfx", {
+        type: "hit",
+        target: "player",
+        amount: retal,
+        vfx: "slash",
+      });
+      setBattleLog((l) => [...l, `${foeName} counters for ${retal}!`]);
+    }
+    await finishRoundAfterDamage(next, newFoe);
+  }
+
+  function attrClashLine(
+    choice: keyof TowerAttrs,
+    foeChoice: keyof TowerAttrs,
+    clash: { damage: number; doubled: boolean; halved: boolean; playerVal: number; foeVal: number },
+  ) {
+    const vs = `${ATTR_LABELS[choice].label} ${clash.playerVal} vs ${ATTR_LABELS[foeChoice].label} ${clash.foeVal}`;
+    if (clash.doubled) return `${vs} — WEAKNESS ×2 → ${clash.damage} dmg`;
+    if (clash.halved) return `${vs} — resisted → ${clash.damage} dmg`;
+    return `${vs} → ${clash.damage} dmg`;
+  }
+
+  async function finishRoundAfterDamage(next: TowerPlayer, newFoe: number) {
+    if (newFoe <= 0) {
+      next.battles_won += 1;
+      next.xp += battleMode === "boss" ? 40 : 18;
+      next.gcoins_earned += battleMode === "boss" ? 10 : 3 + Math.floor(next.floor / 5);
+      battleGameRef.current?.events.emit("gt-battle-vfx", { type: "win" });
+      toast.success(`${foeName} defeated!`);
+
+      if (activeEnemyId && (battleMode === "monster" || battleMode === "boss")) {
+        const defeated = [...new Set([...defeatedOnFloor, activeEnemyId])];
+        setDefeatedOnFloor(defeated);
+        next.equipment = withFloorProgress(next.equipment, next.floor, defeated, claimedOnFloor);
+        const required = enemiesForFloor(next.floor);
+        if (required.every((e) => defeated.includes(e.id))) {
+          toast.success("Floor cleared! The ascend portal unlocks.");
+        }
+        if (battleMode === "boss") {
+          next.titles = [...new Set([...next.titles, `Guardian Slayer ${next.floor}`])];
+          awardGcoins("complete_reviewer", `gt-boss-${event?.id}-${next.floor}`);
+        }
+      }
+
+      setActiveEnemyId(null);
+      setPlayer(next);
+      await persistPlayer(next);
+      setTimeout(() => setScreen("floor"), 800);
+      setPendingAction(null);
+      return;
     }
 
     if (next.hp <= 0) {
@@ -939,8 +1068,9 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       next.floor = 1;
       next.hp = Math.max(20, Math.floor(next.max_hp * 0.4));
       next.energy = Math.min(next.max_energy, Math.floor(next.max_energy * 0.5));
-      next.equipment = withFloorProgress(next.equipment, 1, []);
+      next.equipment = withFloorProgress(next.equipment, 1, [], []);
       setDefeatedOnFloor([]);
+      setClaimedOnFloor([]);
       setActiveEnemyId(null);
       battleGameRef.current?.events.emit("gt-battle-vfx", { type: "lose" });
       toast.error("Defeated! You wake at Floor 1 — climb again.");
@@ -1423,7 +1553,7 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       )}
 
       {screen === "floor" && player && (
-        <div className="space-y-2">
+        <div className="space-y-2 relative">
           <div className="flex items-center gap-2 text-xs">
             <Heart className="h-3.5 w-3.5 text-rose-500" />
             <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
@@ -1446,10 +1576,10 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
           </div>
           <div
             ref={floorHostRef}
-            className="w-full overflow-hidden rounded-2xl border border-border bg-[#0b1220] shadow-card ring-1 ring-amber-500/10"
-            style={{ minHeight: 380 }}
+            className="w-full overflow-hidden rounded-2xl border border-border bg-[#0b1220] shadow-card ring-1 ring-amber-500/10 [&_canvas]:[image-rendering:pixelated]"
+            style={{ minHeight: 320 }}
           />
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => setShowBoard((v) => !v)}
@@ -1464,7 +1594,23 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
             >
               Remodel ({GOTCHI_EDIT_COST}¢)
             </button>
-            <form onSubmit={sendChat} className="flex flex-1 gap-2">
+            <button
+              type="button"
+              onClick={() => setChatOpen((v) => !v)}
+              className={cn(
+                "rounded-xl px-3 py-2 text-xs font-semibold inline-flex items-center gap-1 sm:hidden",
+                chatOpen ? "bg-primary text-primary-foreground" : "bg-muted",
+              )}
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              Chat
+              {chat.length > 0 && (
+                <span className="ml-0.5 rounded-full bg-amber-500/90 text-[9px] text-white px-1.5">
+                  {Math.min(99, chat.length)}
+                </span>
+              )}
+            </button>
+            <form onSubmit={sendChat} className="hidden sm:flex flex-1 gap-2 min-w-[12rem]">
               <input
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
@@ -1492,11 +1638,42 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
                 ))}
             </div>
           )}
-          {chat.length > 0 && (
-            <div className="max-h-20 overflow-y-auto rounded-xl bg-muted/60 px-2 py-1 text-[11px] space-y-0.5">
+          {chat.length > 0 && !chatOpen && (
+            <div className="hidden sm:block max-h-20 overflow-y-auto rounded-xl bg-muted/60 px-2 py-1 text-[11px] space-y-0.5">
               {chat.slice(-6).map((line, i) => (
                 <div key={`${i}-${line}`}>{line}</div>
               ))}
+            </div>
+          )}
+          {chatOpen && (
+            <div className="sm:hidden rounded-2xl border border-border bg-card p-2.5 space-y-2 shadow-card">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold">Floor chat</span>
+                <button type="button" onClick={() => setChatOpen(false)} aria-label="Close chat">
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </div>
+              <div className="max-h-28 overflow-y-auto rounded-xl bg-muted/60 px-2 py-1.5 text-[11px] space-y-0.5 min-h-[3rem]">
+                {chat.length === 0 ? (
+                  <div className="text-muted-foreground">No messages yet</div>
+                ) : (
+                  chat.slice(-10).map((line, i) => <div key={`${i}-${line}`}>{line}</div>)
+                )}
+              </div>
+              <form onSubmit={sendChat} className="flex gap-2">
+                <input
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="Say something…"
+                  className="flex-1 rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none"
+                />
+                <button
+                  type="submit"
+                  className="rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground"
+                >
+                  Send
+                </button>
+              </form>
             </div>
           )}
           <p className="text-[10px] text-muted-foreground text-center">
@@ -1506,10 +1683,10 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       )}
 
       {screen === "battle" && player && (
-        <div className="space-y-2">
+        <div className="space-y-2 max-h-[min(78vh,720px)] overflow-y-auto overscroll-contain pb-2">
           <div
             ref={battleHostRef}
-            className="w-full overflow-hidden rounded-2xl border border-border bg-[#0b1220]"
+            className="w-full overflow-hidden rounded-2xl border border-border bg-[#0b1220] [&_canvas]:[image-rendering:pixelated] shrink-0"
           />
           {lastExplanation && (
             <div
@@ -1535,11 +1712,41 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
             />
             <StatBar label={foeName} value={foeHp} max={foeMaxHp} color="bg-violet-500" />
           </div>
-          <div className="max-h-20 overflow-y-auto rounded-xl bg-muted px-3 py-2 text-[11px] space-y-0.5">
+          {foeAttrs && (
+            <div className="text-[9px] text-muted-foreground text-center">
+              Foe attrs · K{foeAttrs.knowledge} R{foeAttrs.resolve} A{foeAttrs.agility} S
+              {foeAttrs.spirit} I{foeAttrs.insight} H{foeAttrs.harmony}
+            </div>
+          )}
+          <div className="max-h-16 overflow-y-auto rounded-xl bg-muted px-3 py-2 text-[11px] space-y-0.5">
             {battleLog.slice(-8).map((l, i) => (
               <div key={`${i}-${l}`}>{l}</div>
             ))}
           </div>
+          {attrPickOpen && (
+            <div className="rounded-2xl border border-primary/30 bg-card p-3 space-y-2 shadow-card">
+              <div className="text-xs font-bold text-center">Choose your clash attribute</div>
+              <p className="text-[10px] text-muted-foreground text-center leading-snug">
+                Beat the foe&apos;s pick for ×2 damage. Chart: Knowledge→Harmony→Insight→Spirit→Agility→Resolve→Knowledge
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                {ATTR_KEYS.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => void chooseBattleAttr(key)}
+                    className="rounded-xl border border-border bg-muted px-2 py-2.5 text-left hover:border-primary active:bg-primary/10"
+                  >
+                    <div className="text-[11px] font-extrabold">{ATTR_LABELS[key].label}</div>
+                    <div className="text-[10px] font-bold text-primary">{player[key]}</div>
+                    <div className="text-[9px] text-muted-foreground">
+                      beats {ATTR_LABELS[ATTR_BEATS[key]].label}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {(() => {
             const lo = readLoadout({
               ...player.equipment,
@@ -1554,22 +1761,25 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
                 <div className="grid grid-cols-3 gap-1.5">
                   <button
                     type="button"
+                    disabled={attrPickOpen || quizOpen}
                     onClick={() => startCombatAction("attack")}
-                    className="rounded-xl py-2 text-[11px] font-bold bg-rose-500/15 text-rose-800"
+                    className="rounded-xl py-2.5 text-[11px] font-bold bg-rose-500/15 text-rose-800 disabled:opacity-40"
                   >
                     <Swords className="inline h-3 w-3 mr-0.5" /> Attack
                   </button>
                   <button
                     type="button"
+                    disabled={attrPickOpen || quizOpen}
                     onClick={() => startCombatAction("heal")}
-                    className="rounded-xl py-2 text-[11px] font-bold bg-emerald-500/15 text-emerald-800"
+                    className="rounded-xl py-2.5 text-[11px] font-bold bg-emerald-500/15 text-emerald-800 disabled:opacity-40"
                   >
                     <Heart className="inline h-3 w-3 mr-0.5" /> Heal
                   </button>
                   <button
                     type="button"
+                    disabled={attrPickOpen || quizOpen}
                     onClick={() => startCombatAction("skill", lo.activeSkill)}
-                    className="rounded-xl py-2 text-[11px] font-bold bg-indigo-500/15 text-indigo-800"
+                    className="rounded-xl py-2.5 text-[11px] font-bold bg-indigo-500/15 text-indigo-800 disabled:opacity-40"
                   >
                     <Sparkles className="inline h-3 w-3 mr-0.5" />{" "}
                     {TOWER_SKILLS[lo.activeSkill]?.name ?? "Skill"}
@@ -1580,6 +1790,7 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
                     <button
                       key={sid}
                       type="button"
+                      disabled={attrPickOpen || quizOpen}
                       onClick={() => {
                         setSelectedSkill(sid);
                         void updateTowerPlayer(player.id, {
@@ -1603,7 +1814,7 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
                         );
                       }}
                       className={cn(
-                        "rounded-lg px-2 py-1 text-[9px] font-bold",
+                        "rounded-lg px-2 py-1.5 text-[9px] font-bold disabled:opacity-40",
                         (selectedSkill ?? lo.activeSkill) === sid
                           ? "bg-violet-600 text-white"
                           : "bg-violet-500/10 text-violet-900",
@@ -1621,29 +1832,33 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
 
       {quizOpen && quiz && (
         <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center">
-          <div className="absolute inset-0 bg-black/35 sm:bg-black/45" aria-hidden />
-          <div className="relative z-10 w-full sm:max-w-md max-h-[40vh] sm:max-h-[65vh] overflow-y-auto rounded-t-2xl sm:rounded-3xl border border-border bg-card p-2.5 sm:p-4 shadow-glow pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-            <div className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-primary mb-0.5">
-              {quiz.category} · {quiz.difficulty}
-              {quiz.hint ? ` · Hint: ${quiz.hint}` : ""}
+          <div className="absolute inset-0 bg-black/40 sm:bg-black/50" aria-hidden />
+          <div className="relative z-10 flex w-full sm:max-w-md flex-col max-h-[min(78vh,640px)] sm:max-h-[75vh] rounded-t-2xl sm:rounded-3xl border border-border bg-card shadow-glow pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+            <div className="shrink-0 px-3 pt-3 sm:px-4 sm:pt-4">
+              <div className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-primary mb-0.5">
+                {quiz.category} · {quiz.difficulty}
+                {quiz.hint ? ` · Hint: ${quiz.hint}` : ""}
+              </div>
+              <div className="text-[12px] sm:text-sm font-bold leading-snug mb-2">
+                {quiz.question}
+              </div>
             </div>
-            <div className="text-[11px] sm:text-sm font-bold leading-snug mb-1.5 sm:mb-2">
-              {quiz.question}
-            </div>
-            <div className="grid gap-1 sm:gap-2">
-              {quiz.options.map((opt, i) => (
-                <button
-                  key={`${opt}-${i}`}
-                  type="button"
-                  onClick={() => void answerQuiz(i)}
-                  className="rounded-lg border border-border bg-muted px-2 py-1.5 sm:px-3 sm:py-2.5 text-left text-[11px] sm:text-sm font-medium hover:border-primary active:bg-primary/10 min-h-[34px] sm:min-h-[44px]"
-                >
-                  <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded bg-primary/15 text-[10px] font-extrabold text-primary">
-                    {String.fromCharCode(65 + i)}
-                  </span>
-                  {opt}
-                </button>
-              ))}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 sm:px-4 sm:pb-4">
+              <div className="grid gap-1.5 sm:gap-2">
+                {quiz.options.map((opt, i) => (
+                  <button
+                    key={`${opt}-${i}`}
+                    type="button"
+                    onClick={() => void answerQuiz(i)}
+                    className="rounded-xl border border-border bg-muted px-2.5 py-2.5 sm:px-3 sm:py-3 text-left text-[12px] sm:text-sm font-medium hover:border-primary active:bg-primary/10 min-h-[44px]"
+                  >
+                    <span className="mr-2 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/15 text-[11px] font-extrabold text-primary align-middle">
+                      {String.fromCharCode(65 + i)}
+                    </span>
+                    <span className="align-middle">{opt}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>

@@ -1,12 +1,14 @@
 /** Gotchi Tower — battle arena with skill / damage VFX. */
 import * as Phaser from "phaser";
-import { PALETTE, type Voxel } from "@/lib/edgotchi";
+import { PALETTE, generateWildVoxels, type Voxel } from "@/lib/edgotchi";
 import { themeForFloor } from "@/lib/gotchi-tower";
 
 export type BattleBootData = {
   playerName: string;
   foeName: string;
   voxels: Voxel[];
+  foeVoxels?: Voxel[];
+  foeSeed?: number;
   floor?: number;
   isBoss?: boolean;
   isPvp?: boolean;
@@ -28,16 +30,17 @@ function hexToNum(hex: string): number {
 function bake(scene: Phaser.Scene, key: string, voxels: Voxel[], scale = 4) {
   if (scene.textures.exists(key)) scene.textures.remove(key);
   const g = scene.make.graphics({ x: 0, y: 0 }, false);
-  g.fillStyle(0x000000, 0.28);
-  g.fillEllipse(4 * scale, 9.2 * scale, 6.5 * scale, 1.8 * scale);
+  g.fillStyle(0x000000, 0.4);
+  g.fillRect(3 * scale, 9 * scale, 5 * scale, scale);
   for (const v of voxels) {
     g.fillStyle(hexToNum(PALETTE[v.c % PALETTE.length]), 1);
     g.fillRect(v.x * scale, v.y * scale, scale, scale);
-    g.fillStyle(0xffffff, 0.2);
-    g.fillRect(v.x * scale, v.y * scale, scale, Math.max(1, scale * 0.28));
   }
   g.generateTexture(key, 8 * scale, 10 * scale);
   g.destroy();
+  if (scene.textures.exists(key)) {
+    scene.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
+  }
 }
 
 class BattleScene extends Phaser.Scene {
@@ -106,24 +109,18 @@ class BattleScene extends Phaser.Scene {
       this.boot.voxels?.length ? this.boot.voxels : [{ x: 3, y: 3, c: 1 }],
       4,
     );
-    if (!this.textures.exists("gt-b-foe")) {
-      const g = this.make.graphics({ x: 0, y: 0 }, false);
-      g.fillStyle(0x2a1848, 1);
-      g.fillEllipse(20, 28, 32, 24);
-      g.fillStyle(this.boot.isBoss ? 0xff4466 : theme.accent, 1);
-      g.fillCircle(20, 14, 12);
-      g.fillStyle(0xffffff, 1);
-      g.fillCircle(16, 12, 2);
-      g.fillCircle(24, 12, 2);
-      g.generateTexture("gt-b-foe", 40, 40);
-      g.destroy();
-    }
+    const foeVox =
+      this.boot.foeVoxels?.length
+        ? this.boot.foeVoxels
+        : generateWildVoxels(this.boot.foeSeed ?? ((this.boot.floor ?? 1) * 9973) >>> 0);
+    bake(this, "gt-b-foe", foeVox, this.boot.isBoss ? 5 : 4);
 
     this.player = this.add.image(w * 0.28, h * 0.52, "gt-b-player").setScale(2.35);
     this.foe = this.add
       .image(w * 0.72, h * 0.48, "gt-b-foe")
-      .setScale(this.boot.isBoss ? 3.2 : 2.4);
-    this.foe.setTint(this.boot.isBoss ? 0xff6688 : this.boot.isPvp ? 0x88aaff : 0xffaa66);
+      .setScale(this.boot.isBoss ? 2.6 : 2.35);
+    if (this.boot.isBoss) this.foe.setTint(0xff6688);
+    else if (this.boot.isPvp) this.foe.setTint(0x88aaff);
     this.foe.setFlipX(true);
 
     this.tweens.add({
@@ -394,11 +391,15 @@ export function createGotchiTowerBattleGame(parent: HTMLElement, data: BattleBoo
     type: Phaser.AUTO,
     parent,
     width: Math.min(parent.clientWidth || 640, 640),
-    height: 300,
+    height: 220,
     backgroundColor: "#0b1220",
+    pixelArt: true,
+    roundPixels: true,
+    antialias: false,
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     scene: [],
   });
+  parent.querySelector("canvas")?.style.setProperty("image-rendering", "pixelated");
   game.scene.add("BattleScene", BattleScene, true, data);
   return game;
 }

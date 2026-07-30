@@ -18,6 +18,15 @@ export type TowerAttrs = {
   harmony: number; // resistance, healing, support
 };
 
+export const ATTR_KEYS: (keyof TowerAttrs)[] = [
+  "knowledge",
+  "resolve",
+  "agility",
+  "spirit",
+  "insight",
+  "harmony",
+];
+
 export const ATTR_LABELS: Record<keyof TowerAttrs, { label: string; blurb: string }> = {
   knowledge: { label: "Knowledge", blurb: "Skill power and quiz mastery" },
   resolve: { label: "Resolve", blurb: "Health and defense" },
@@ -26,6 +35,88 @@ export const ATTR_LABELS: Record<keyof TowerAttrs, { label: string; blurb: strin
   spirit: { label: "Spirit", blurb: "Energy regen and ultimates" },
   harmony: { label: "Harmony", blurb: "Healing, resistance, support" },
 };
+
+/**
+ * Tower of Doom–style attribute chart: each attr beats exactly one.
+ * knowledge → harmony → insight → spirit → agility → resolve → knowledge
+ */
+export const ATTR_BEATS: Record<keyof TowerAttrs, keyof TowerAttrs> = {
+  knowledge: "harmony",
+  harmony: "insight",
+  insight: "spirit",
+  spirit: "agility",
+  agility: "resolve",
+  resolve: "knowledge",
+};
+
+export function attrBeats(attacker: keyof TowerAttrs, defender: keyof TowerAttrs): boolean {
+  return ATTR_BEATS[attacker] === defender;
+}
+
+/** Seeded foe attributes that scale with floor / boss. */
+export function foeAttrsFor(
+  floor: number,
+  mode: "monster" | "boss" | "pvp",
+  seed = floor * 9973,
+): TowerAttrs {
+  const base = mode === "boss" ? 8 + Math.floor(floor * 1.4) : mode === "pvp" ? 10 + floor : 5 + Math.floor(floor * 1.1);
+  const spread = mode === "boss" ? 6 : 4;
+  const pick = (i: number) =>
+    Math.max(3, base + ((seed * (i + 3) * 7919) % (spread * 2 + 1)) - spread);
+  return {
+    knowledge: pick(0),
+    resolve: pick(1),
+    agility: pick(2),
+    spirit: pick(3),
+    insight: pick(4),
+    harmony: pick(5),
+  };
+}
+
+export function pickFoeAttr(attrs: TowerAttrs, preferCounter?: keyof TowerAttrs): keyof TowerAttrs {
+  if (preferCounter) {
+    const counter = ATTR_KEYS.find((k) => ATTR_BEATS[k] === preferCounter);
+    if (counter && Math.random() < 0.55) return counter;
+  }
+  // Prefer the foe's strongest attribute
+  return ATTR_KEYS.reduce((best, k) => (attrs[k] > attrs[best] ? k : best), ATTR_KEYS[0]);
+}
+
+export type AttrClashResult = {
+  damage: number;
+  doubled: boolean;
+  halved: boolean;
+  playerVal: number;
+  foeVal: number;
+  foeChoice: keyof TowerAttrs;
+};
+
+/** Attribute clash damage after a correct quiz answer. */
+export function resolveAttrClash(
+  playerAttrs: TowerAttrs,
+  foeAttrs: TowerAttrs,
+  playerChoice: keyof TowerAttrs,
+  foeChoice: keyof TowerAttrs,
+  mods: {
+    classMod: number;
+    buildMul: number;
+    skillPower: number;
+    skillPowerMul: number;
+    crit: boolean;
+  },
+): AttrClashResult {
+  const playerVal = playerAttrs[playerChoice];
+  const foeVal = foeAttrs[foeChoice];
+  const doubled = attrBeats(playerChoice, foeChoice);
+  const halved = attrBeats(foeChoice, playerChoice);
+  let base = Math.max(1, playerVal - foeVal);
+  if (doubled) base *= 2;
+  else if (halved) base = Math.max(1, Math.floor(base * 0.5));
+  const skillScale =
+    (mods.skillPower / 10) * mods.skillPowerMul * mods.classMod * mods.buildMul * (mods.crit ? 1.65 : 1);
+  const damage = Math.max(1, Math.floor(base + skillScale));
+  return { damage, doubled, halved, playerVal, foeVal, foeChoice };
+}
 
 export type FloorThemeId =
   | "training_hall"
@@ -652,6 +743,8 @@ export type FloorEnemyDef = {
   id: string;
   name: string;
   isBoss: boolean;
+  /** Deterministic seed for unique voxel look */
+  seed: number;
 };
 
 /** Enemies that must be cleared before ascending this floor. */
@@ -663,6 +756,7 @@ export function enemiesForFloor(floor: number): FloorEnemyDef[] {
         id: `mob-${floor}-boss`,
         name: `Guardian of Floor ${floor}`,
         isBoss: true,
+        seed: (floor * 104729 + 42) >>> 0,
       },
     ];
   }
@@ -672,6 +766,7 @@ export function enemiesForFloor(floor: number): FloorEnemyDef[] {
     id: `mob-${floor}-${i}`,
     name: `${names[i % names.length]} ${floor}`,
     isBoss: false,
+    seed: (floor * 9973 + i * 7919 + 13) >>> 0,
   }));
 }
 
@@ -698,7 +793,12 @@ export function foeRetaliationDamage(
   return Math.max(4, Math.floor(raw - defense / 5));
 }
 
-export type TowerFloorProgress = { floor: number; defeated: string[] };
+export type TowerFloorProgress = {
+  floor: number;
+  defeated: string[];
+  /** Chest / shrine ids already claimed on this floor */
+  claimed?: string[];
+};
 
 export function readFloorProgress(
   equipment: Record<string, unknown> | null | undefined,
@@ -709,12 +809,38 @@ export function readFloorProgress(
   return tp.defeated.map(String);
 }
 
+export function readClaimedRewards(
+  equipment: Record<string, unknown> | null | undefined,
+  floor: number,
+): string[] {
+  const tp = equipment?.tower_progress as TowerFloorProgress | undefined;
+  if (!tp || tp.floor !== floor || !Array.isArray(tp.claimed)) return [];
+  return tp.claimed.map(String);
+}
+
 export function withFloorProgress(
   equipment: Record<string, unknown> | null | undefined,
   floor: number,
   defeated: string[],
+  claimed?: string[],
 ): Record<string, unknown> {
-  return { ...(equipment ?? {}), tower_progress: { floor, defeated } };
+  const prev = equipment?.tower_progress as TowerFloorProgress | undefined;
+  const keepClaimed =
+    claimed ?? (prev && prev.floor === floor && Array.isArray(prev.claimed) ? prev.claimed : []);
+  return {
+    ...(equipment ?? {}),
+    tower_progress: { floor, defeated, claimed: keepClaimed.map(String) },
+  };
+}
+
+export function withClaimedReward(
+  equipment: Record<string, unknown> | null | undefined,
+  floor: number,
+  rewardId: string,
+): Record<string, unknown> {
+  const defeated = readFloorProgress(equipment, floor);
+  const claimed = [...new Set([...readClaimedRewards(equipment, floor), rewardId])];
+  return withFloorProgress(equipment, floor, defeated, claimed);
 }
 
 export type TowerLeaderboardEntry = {
