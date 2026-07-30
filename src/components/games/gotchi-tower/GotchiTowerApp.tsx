@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -202,6 +203,15 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     void refreshEvents();
   }, [refreshEvents]);
+
+  useEffect(() => {
+    if (!quizOpen && !attrPickOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [quizOpen, attrPickOpen]);
 
   useEffect(() => {
     if (!user) return;
@@ -1723,30 +1733,49 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
               <div key={`${i}-${l}`}>{l}</div>
             ))}
           </div>
-          {attrPickOpen && (
-            <div className="rounded-2xl border border-primary/30 bg-card p-3 space-y-2 shadow-card">
-              <div className="text-xs font-bold text-center">Choose your clash attribute</div>
-              <p className="text-[10px] text-muted-foreground text-center leading-snug">
-                Beat the foe&apos;s pick for ×2 damage. Chart: Knowledge→Harmony→Insight→Spirit→Agility→Resolve→Knowledge
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                {ATTR_KEYS.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => void chooseBattleAttr(key)}
-                    className="rounded-xl border border-border bg-muted px-2 py-2.5 text-left hover:border-primary active:bg-primary/10"
-                  >
-                    <div className="text-[11px] font-extrabold">{ATTR_LABELS[key].label}</div>
-                    <div className="text-[10px] font-bold text-primary">{player[key]}</div>
-                    <div className="text-[9px] text-muted-foreground">
-                      beats {ATTR_LABELS[ATTR_BEATS[key]].label}
+          {attrPickOpen &&
+            createPortal(
+              <div className="fixed inset-0 z-[200] flex flex-col justify-end sm:items-center sm:justify-center">
+                <div className="absolute inset-0 bg-[#0b1220]/72" aria-hidden />
+                <div
+                  className="relative z-10 flex w-full sm:max-w-md flex-col rounded-t-[1.75rem] sm:rounded-3xl border border-amber-500/20 bg-card shadow-[0_-12px_40px_rgba(0,0,0,0.45)]"
+                  style={{
+                    paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+                    maxHeight: "min(88dvh, 640px)",
+                  }}
+                >
+                  <div className="mx-auto mt-2 mb-1 h-1 w-10 rounded-full bg-muted-foreground/30 sm:hidden" />
+                  <div className="px-4 pt-2 pb-3 space-y-2 overflow-y-auto overscroll-contain">
+                    <div className="text-sm font-extrabold text-center tracking-tight">
+                      Choose your clash attribute
                     </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+                    <p className="text-[10px] text-muted-foreground text-center leading-snug px-1">
+                      Higher wins. Weakness deals ×2. Knowledge beats Harmony → Insight → Spirit →
+                      Agility → Resolve → Knowledge.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {ATTR_KEYS.map((key) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => void chooseBattleAttr(key)}
+                          className="rounded-2xl border border-border bg-gradient-to-b from-muted to-muted/60 px-3 py-3 text-left active:scale-[0.98] hover:border-primary touch-manipulation min-h-[4.5rem]"
+                        >
+                          <div className="text-[12px] font-extrabold">{ATTR_LABELS[key].label}</div>
+                          <div className="text-lg font-black text-primary leading-none mt-0.5">
+                            {player[key]}
+                          </div>
+                          <div className="text-[9px] text-muted-foreground mt-1">
+                            beats {ATTR_LABELS[ATTR_BEATS[key]].label}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )}
           {(() => {
             const lo = readLoadout({
               ...player.equipment,
@@ -1830,39 +1859,58 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      {quizOpen && quiz && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end sm:items-center sm:justify-center">
-          <div className="absolute inset-0 bg-black/40 sm:bg-black/50" aria-hidden />
-          <div className="relative z-10 flex w-full sm:max-w-md flex-col max-h-[min(78vh,640px)] sm:max-h-[75vh] rounded-t-2xl sm:rounded-3xl border border-border bg-card shadow-glow pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-            <div className="shrink-0 px-3 pt-3 sm:px-4 sm:pt-4">
-              <div className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-primary mb-0.5">
-                {quiz.category} · {quiz.difficulty}
-                {quiz.hint ? ` · Hint: ${quiz.hint}` : ""}
+      {quizOpen &&
+        quiz &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[200] flex flex-col justify-end sm:items-center sm:justify-center"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Quiz question"
+          >
+            <div className="absolute inset-0 bg-[#070b14]/78" aria-hidden />
+            <div
+              className="relative z-10 flex w-full sm:max-w-lg flex-col rounded-t-[1.75rem] sm:rounded-3xl border border-violet-400/25 bg-card shadow-[0_-16px_48px_rgba(0,0,0,0.55)]"
+              style={{
+                maxHeight: "min(92dvh, 720px)",
+                paddingBottom: "max(1.25rem, calc(env(safe-area-inset-bottom) + 0.5rem))",
+              }}
+            >
+              <div className="mx-auto mt-2.5 mb-1 h-1.5 w-11 rounded-full bg-muted-foreground/35 sm:hidden" />
+              <div className="shrink-0 px-4 pt-1.5 pb-2 border-b border-border/60">
+                <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-700 dark:text-violet-300 mb-1 line-clamp-2">
+                  {quiz.category} · {quiz.difficulty}
+                  {quiz.hint ? ` · Hint: ${quiz.hint}` : ""}
+                </div>
+                <div className="text-[15px] sm:text-base font-extrabold leading-snug tracking-tight">
+                  {quiz.question}
+                </div>
               </div>
-              <div className="text-[12px] sm:text-sm font-bold leading-snug mb-2">
-                {quiz.question}
+              <div
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pt-3 sm:px-4"
+                style={{ WebkitOverflowScrolling: "touch" }}
+              >
+                <div className="grid grid-cols-1 gap-2 pb-2">
+                  {quiz.options.map((opt, i) => (
+                    <button
+                      key={`${opt}-${i}`}
+                      type="button"
+                      onClick={() => void answerQuiz(i)}
+                      className="flex items-start gap-2.5 rounded-2xl border border-border bg-muted/80 px-3 py-3.5 text-left text-[13px] sm:text-sm font-semibold leading-snug hover:border-primary active:bg-primary/10 active:scale-[0.99] touch-manipulation min-h-[3.5rem]"
+                    >
+                      <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-[12px] font-black text-white shadow-sm">
+                        {String.fromCharCode(65 + i)}
+                      </span>
+                      <span className="pt-0.5">{opt}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="h-6" aria-hidden />
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3 sm:px-4 sm:pb-4">
-              <div className="grid gap-1.5 sm:gap-2">
-                {quiz.options.map((opt, i) => (
-                  <button
-                    key={`${opt}-${i}`}
-                    type="button"
-                    onClick={() => void answerQuiz(i)}
-                    className="rounded-xl border border-border bg-muted px-2.5 py-2.5 sm:px-3 sm:py-3 text-left text-[12px] sm:text-sm font-medium hover:border-primary active:bg-primary/10 min-h-[44px]"
-                  >
-                    <span className="mr-2 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/15 text-[11px] font-extrabold text-primary align-middle">
-                      {String.fromCharCode(65 + i)}
-                    </span>
-                    <span className="align-middle">{opt}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
