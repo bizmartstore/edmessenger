@@ -45,7 +45,6 @@ function AdminStudents() {
   const [quizScores, setQuizScores] = useState<AcademicQuizScore[]>([]);
   const [performanceScores, setPerformanceScores] = useState<AcademicPerformanceScore[]>([]);
   const [termGrades, setTermGrades] = useState<AcademicTermGrade[]>([]);
-  const [batchBusy, setBatchBusy] = useState(false);
 
 
   const fileRef = useRef<HTMLInputElement>(null);
