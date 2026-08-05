@@ -6,9 +6,21 @@ import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { Camera, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { buildFullName, getInitials, getProfileDisplayName, splitStoredName } from "@/lib/profile-name";
+import {
+  buildFullName,
+  getInitials,
+  getProfileDisplayName,
+  splitStoredName,
+} from "@/lib/profile-name";
 import { QuickGradebook } from "@/components/QuickGradebook";
-import { parseScore, TERM_OPTIONS, type AcademicPerformanceScore, type AcademicQuizScore, type AcademicTab, type AcademicTermGrade } from "@/lib/academic";
+import {
+  parseScore,
+  TERM_OPTIONS,
+  type AcademicPerformanceScore,
+  type AcademicQuizScore,
+  type AcademicTab,
+  type AcademicTermGrade,
+} from "@/lib/academic";
 
 export const Route = createFileRoute("/admin/students")({
   component: AdminStudents,
@@ -46,11 +58,13 @@ function AdminStudents() {
   const [performanceScores, setPerformanceScores] = useState<AcademicPerformanceScore[]>([]);
   const [termGrades, setTermGrades] = useState<AcademicTermGrade[]>([]);
 
-
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
-    const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: false });
     setStudents((data ?? []) as Row[]);
   }
 
@@ -176,7 +190,10 @@ function AdminStudents() {
     if (error) toast.error(error.message);
   }
 
-  async function deleteAcademicRow(table: "academic_quiz_scores" | "academic_performance_scores", id: string) {
+  async function deleteAcademicRow(
+    table: "academic_quiz_scores" | "academic_performance_scores",
+    id: string,
+  ) {
     const { error } = await supabase.from(table).delete().eq("id", id);
     if (error) {
       toast.error(error.message);
@@ -256,8 +273,6 @@ function AdminStudents() {
 
   const alphabeticalStudents = useMemo(() => sortByLastName(students), [students]);
 
-
-
   return (
     <div>
       <div className="flex gap-2 mb-3">
@@ -268,7 +283,9 @@ function AdminStudents() {
             setMode("single");
           }}
           className={`flex-1 py-2 rounded-2xl text-sm font-semibold transition-all ${
-            mode === "single" ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground hover:bg-secondary"
+            mode === "single"
+              ? "gradient-primary text-primary-foreground shadow-glow"
+              : "bg-muted text-muted-foreground hover:bg-secondary"
           }`}
         >
           1-by-1 Student Editor
@@ -280,7 +297,9 @@ function AdminStudents() {
             setMode("gradebook");
           }}
           className={`flex-1 py-2 rounded-2xl text-sm font-semibold transition-all ${
-            mode === "gradebook" ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground hover:bg-secondary"
+            mode === "gradebook"
+              ? "gradient-primary text-primary-foreground shadow-glow"
+              : "bg-muted text-muted-foreground hover:bg-secondary"
           }`}
         >
           Quick Gradebook
@@ -296,11 +315,15 @@ function AdminStudents() {
             className="mb-3 w-full rounded-2xl border border-border bg-muted px-4 py-3 text-sm outline-none focus:border-primary"
           />
           <div className="text-sm mb-3">
-            <span className="font-bold">{students.length}</span> student{students.length === 1 ? "" : "s"} registered
+            <span className="font-bold">{students.length}</span> student
+            {students.length === 1 ? "" : "s"} registered
           </div>
           <div className="rounded-2xl bg-card border border-border overflow-hidden">
             {filteredStudents.map((s) => (
-              <div key={s.id} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-b-0">
+              <div
+                key={s.id}
+                className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-b-0"
+              >
                 {s.avatar_url ? (
                   <img src={s.avatar_url} alt="" className="h-10 w-10 rounded-full object-cover" />
                 ) : (
@@ -309,7 +332,9 @@ function AdminStudents() {
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="font-semibold text-sm truncate">{getProfileDisplayName(s) || "Student"}</div>
+                  <div className="font-semibold text-sm truncate">
+                    {getProfileDisplayName(s) || "Student"}
+                  </div>
                   <div className="text-xs text-muted-foreground truncate">{s.email}</div>
                   {(s.school || s.section || s.contact_number) && (
                     <div className="text-[10px] text-muted-foreground truncate">
@@ -333,7 +358,7 @@ function AdminStudents() {
           </div>
         </>
       ) : (
-          <QuickGradebook students={students} />
+        <QuickGradebook students={students} />
       )}
 
       {editing && (
@@ -341,7 +366,11 @@ function AdminStudents() {
           <div className="w-full max-w-3xl rounded-3xl bg-card border border-border shadow-glow p-5 animate-fade-up max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-bold">Edit student</h2>
-              <button type="button" onClick={() => setEditing(null)} className="p-2 rounded-xl hover:bg-muted">
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                className="p-2 rounded-xl hover:bg-muted"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -352,7 +381,11 @@ function AdminStudents() {
                   <img src={avatarUrl} alt="" className="h-20 w-20 rounded-full object-cover" />
                 ) : (
                   <div className="h-20 w-20 rounded-full gradient-primary grid place-items-center text-2xl font-bold text-primary-foreground">
-                    {getInitials({ first_name: firstName, last_name: lastName, full_name: editing.full_name })}
+                    {getInitials({
+                      first_name: firstName,
+                      last_name: lastName,
+                      full_name: editing.full_name,
+                    })}
                   </div>
                 )}
                 <span className="absolute bottom-0 right-0 h-7 w-7 rounded-full bg-card border grid place-items-center">
@@ -368,14 +401,28 @@ function AdminStudents() {
               />
             </div>
 
-            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AcademicTab | "profile")} className="w-full">
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value as AcademicTab | "profile")}
+              className="w-full"
+            >
               <div className="overflow-x-auto pb-2">
                 <TabsList className="inline-flex h-auto min-w-max gap-1 rounded-2xl p-1">
-                  <TabsTrigger value="profile" className="rounded-xl px-3 py-2 text-xs">Profile</TabsTrigger>
-                  <TabsTrigger value="quizzes" className="rounded-xl px-3 py-2 text-xs">Quizzes</TabsTrigger>
-                  <TabsTrigger value="performance" className="rounded-xl px-3 py-2 text-xs">Performance</TabsTrigger>
+                  <TabsTrigger value="profile" className="rounded-xl px-3 py-2 text-xs">
+                    Profile
+                  </TabsTrigger>
+                  <TabsTrigger value="quizzes" className="rounded-xl px-3 py-2 text-xs">
+                    Quizzes
+                  </TabsTrigger>
+                  <TabsTrigger value="performance" className="rounded-xl px-3 py-2 text-xs">
+                    Performance
+                  </TabsTrigger>
                   {TERM_OPTIONS.map((term) => (
-                    <TabsTrigger key={term.value} value={term.value} className="rounded-xl px-3 py-2 text-xs">
+                    <TabsTrigger
+                      key={term.value}
+                      value={term.value}
+                      className="rounded-xl px-3 py-2 text-xs"
+                    >
                       {term.label}
                     </TabsTrigger>
                   ))}
@@ -384,7 +431,9 @@ function AdminStudents() {
 
               <TabsContent value="profile" className="space-y-3">
                 <label className="block">
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Last name</span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Last name
+                  </span>
                   <input
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value.toUpperCase())}
@@ -392,7 +441,9 @@ function AdminStudents() {
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">First name</span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    First name
+                  </span>
                   <input
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value.toUpperCase())}
@@ -400,7 +451,9 @@ function AdminStudents() {
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Middle name (optional)</span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Middle name (optional)
+                  </span>
                   <input
                     value={middleName}
                     onChange={(e) => setMiddleName(e.target.value.toUpperCase())}
@@ -408,7 +461,9 @@ function AdminStudents() {
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">School</span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    School
+                  </span>
                   <input
                     value={school}
                     onChange={(e) => setSchool(e.target.value.toUpperCase())}
@@ -416,7 +471,9 @@ function AdminStudents() {
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Section</span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Section
+                  </span>
                   <input
                     value={sectionValue}
                     onChange={(e) => setSectionValue(e.target.value.toUpperCase())}
@@ -425,7 +482,9 @@ function AdminStudents() {
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Email</span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Email
+                  </span>
                   <input
                     value={editing.email ?? ""}
                     disabled
@@ -433,7 +492,9 @@ function AdminStudents() {
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Contact number</span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Contact number
+                  </span>
                   <input
                     value={contact}
                     onChange={(e) => setContact(e.target.value)}
@@ -471,7 +532,9 @@ function AdminStudents() {
                   emptyLabel="No performance scores yet."
                   onAdd={() => void addAcademicRow("academic_performance_scores")}
                   onChange={(row) => {
-                    setPerformanceScores((prev) => prev.map((item) => (item.id === row.id ? row : item)));
+                    setPerformanceScores((prev) =>
+                      prev.map((item) => (item.id === row.id ? row : item)),
+                    );
                     void updateAcademicRow("academic_performance_scores", row.id, row);
                   }}
                   onDelete={(id) => void deleteAcademicRow("academic_performance_scores", id)}
@@ -482,7 +545,9 @@ function AdminStudents() {
                 <TabsContent key={term.value} value={term.value}>
                   <TermGradeEditor
                     termLabel={term.label}
-                    currentValue={termGrades.find((row) => row.term_no === index + 1)?.grade_value ?? ""}
+                    currentValue={
+                      termGrades.find((row) => row.term_no === index + 1)?.grade_value ?? ""
+                    }
                     onSave={(value) => void saveTermGrade((index + 1) as 1 | 2 | 3, value)}
                   />
                 </TabsContent>

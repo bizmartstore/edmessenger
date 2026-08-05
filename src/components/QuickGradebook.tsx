@@ -27,8 +27,18 @@ type Assessment = {
 
 const KINDS: { key: Kind; label: string; table: string; noun: string }[] = [
   { key: "quiz", label: "Quizzes", table: "academic_quiz_scores", noun: "Quiz" },
-  { key: "performance", label: "Performance", table: "academic_performance_scores", noun: "Performance task" },
-  { key: "summative", label: "Summative", table: "academic_summative_scores", noun: "Summative test" },
+  {
+    key: "performance",
+    label: "Performance",
+    table: "academic_performance_scores",
+    noun: "Performance task",
+  },
+  {
+    key: "summative",
+    label: "Summative",
+    table: "academic_summative_scores",
+    noun: "Summative test",
+  },
 ];
 
 const UNASSIGNED = "__unassigned__";
@@ -110,7 +120,10 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
   const loadAssessments = useCallback(async () => {
     if (!section) return;
     const sectionValue = section === UNASSIGNED ? null : section;
-    let q = supabase.from("academic_assessments").select("id, kind, section, title, max_score").eq("kind", kind);
+    let q = supabase
+      .from("academic_assessments")
+      .select("id, kind, section, title, max_score")
+      .eq("kind", kind);
     q = sectionValue == null ? q.is("section", null) : q.eq("section", sectionValue);
     const { data, error } = await q.order("created_at", { ascending: true });
     if (error) {
@@ -219,7 +232,8 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
   }
 
   async function removeAssessment(a: Assessment) {
-    if (!window.confirm(`Remove "${a.title}" from this section? Recorded scores stay saved.`)) return;
+    if (!window.confirm(`Remove "${a.title}" from this section? Recorded scores stay saved.`))
+      return;
     const { error } = await supabase.from("academic_assessments").delete().eq("id", a.id);
     if (error) {
       toast.error(error.message);
@@ -230,14 +244,27 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
   }
 
   /** Replace scores for one title across a set of students. */
-  async function persist(title: string, max: number, entries: { student_id: string; value: string }[]) {
+  async function persist(
+    title: string,
+    max: number,
+    entries: { student_id: string; value: string }[],
+  ) {
     const ids = entries.map((e) => e.student_id);
     if (!ids.length) return 0;
-    const { error: delError } = await supabase.from(tableFor(kind)).delete().eq("title", title).in("student_id", ids);
+    const { error: delError } = await supabase
+      .from(tableFor(kind))
+      .delete()
+      .eq("title", title)
+      .in("student_id", ids);
     if (delError) throw delError;
     const rows = entries
       .filter((e) => e.value.trim() !== "")
-      .map((e) => ({ student_id: e.student_id, title, score: parseScore(e.value), max_score: max }));
+      .map((e) => ({
+        student_id: e.student_id,
+        title,
+        score: parseScore(e.value),
+        max_score: max,
+      }));
     if (rows.length) {
       const { error } = await supabase.from(tableFor(kind)).insert(rows);
       if (error) throw error;
@@ -290,10 +317,18 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
     try {
       const nonEmpty = studentIds
         .filter((id) => (termGrades[id] ?? "").trim())
-        .map((id) => ({ student_id: id, term_no: termNo, grade_value: (termGrades[id] ?? "").trim() }));
+        .map((id) => ({
+          student_id: id,
+          term_no: termNo,
+          grade_value: (termGrades[id] ?? "").trim(),
+        }));
       const emptyIds = studentIds.filter((id) => !(termGrades[id] ?? "").trim());
       if (emptyIds.length) {
-        await supabase.from("academic_term_grades").delete().in("student_id", emptyIds).eq("term_no", termNo);
+        await supabase
+          .from("academic_term_grades")
+          .delete()
+          .in("student_id", emptyIds)
+          .eq("term_no", termNo);
       }
       if (nonEmpty.length) {
         const { error } = await supabase
@@ -332,8 +367,8 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
           {sections.hasUnassigned && <option value={UNASSIGNED}>No section yet</option>}
         </select>
         <div className="mt-2 text-[11px] text-muted-foreground">
-          {sectionStudents.length} student{sectionStudents.length === 1 ? "" : "s"} in this section. Set a student&apos;s
-          section in the 1-by-1 Student Editor.
+          {sectionStudents.length} student{sectionStudents.length === 1 ? "" : "s"} in this section.
+          Set a student&apos;s section in the 1-by-1 Student Editor.
         </div>
       </div>
 
@@ -420,7 +455,9 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
                   : "bg-muted text-muted-foreground hover:bg-secondary"
               }`}
             >
-              {m === "assessment" ? "By assessment (whole section)" : "By student (all assessments)"}
+              {m === "assessment"
+                ? "By assessment (whole section)"
+                : "By student (all assessments)"}
             </button>
           ))}
         </div>
@@ -432,7 +469,9 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="font-bold text-sm">Score the whole section</div>
-              <div className="text-xs text-muted-foreground mt-1">Pick one assessment and type every score.</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Pick one assessment and type every score.
+              </div>
             </div>
             <button
               type="button"
@@ -462,7 +501,9 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
 
           <div className="mt-4 space-y-2">
             {sectionStudents.length === 0 ? (
-              <div className="text-xs text-muted-foreground py-6 text-center">No students in this section.</div>
+              <div className="text-xs text-muted-foreground py-6 text-center">
+                No students in this section.
+              </div>
             ) : (
               sectionStudents.map((s) => (
                 <div key={s.id} className="grid grid-cols-[1fr,110px] items-center gap-3">
@@ -471,13 +512,17 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
                       {getInitials(s)}
                     </div>
                     <div className="min-w-0">
-                      <div className="text-sm font-semibold truncate">{getProfileDisplayName(s) || "Student"}</div>
+                      <div className="text-sm font-semibold truncate">
+                        {getProfileDisplayName(s) || "Student"}
+                      </div>
                       <div className="text-[10px] text-muted-foreground truncate">{s.email}</div>
                     </div>
                   </div>
                   <input
                     value={columnScores[s.id] ?? ""}
-                    onChange={(e) => setColumnScores((prev) => ({ ...prev, [s.id]: e.target.value }))}
+                    onChange={(e) =>
+                      setColumnScores((prev) => ({ ...prev, [s.id]: e.target.value }))
+                    }
                     disabled={!activeAssessment}
                     type="number"
                     min={0}
@@ -538,7 +583,9 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
                   </div>
                   <input
                     value={rowScores[a.title] ?? ""}
-                    onChange={(e) => setRowScores((prev) => ({ ...prev, [a.title]: e.target.value }))}
+                    onChange={(e) =>
+                      setRowScores((prev) => ({ ...prev, [a.title]: e.target.value }))
+                    }
                     disabled={!activeStudentId}
                     type="number"
                     min={0}
@@ -557,7 +604,9 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="font-bold text-sm">Final Grades (this section)</div>
-            <div className="text-xs text-muted-foreground mt-1">Enter term grades by student, then save once.</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Enter term grades by student, then save once.
+            </div>
           </div>
           <button
             type="button"
@@ -588,7 +637,9 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
 
         <div className="mt-4 space-y-2">
           {sectionStudents.length === 0 ? (
-            <div className="text-xs text-muted-foreground py-6 text-center">No students in this section.</div>
+            <div className="text-xs text-muted-foreground py-6 text-center">
+              No students in this section.
+            </div>
           ) : (
             sectionStudents.map((s) => (
               <div key={s.id} className="grid grid-cols-[1fr,170px] items-center gap-3">
@@ -597,7 +648,9 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
                     {getInitials(s)}
                   </div>
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold truncate">{getProfileDisplayName(s) || "Student"}</div>
+                    <div className="text-sm font-semibold truncate">
+                      {getProfileDisplayName(s) || "Student"}
+                    </div>
                     <div className="text-[10px] text-muted-foreground truncate">{s.email}</div>
                   </div>
                 </div>

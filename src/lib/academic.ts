@@ -26,7 +26,7 @@ export const TERM_OPTIONS = [
   { value: "term-3", label: "Term 3" },
 ] as const;
 
-export type AcademicTab = "quizzes" | "performance" | "term-1" | "term-2" | "term-3";
+export type AcademicTab = "quizzes" | "performance" | "summative" | "term-1" | "term-2" | "term-3";
 
 export function parseScore(value: string) {
   const trimmed = value.trim();

@@ -17,13 +17,14 @@ export function AcademicModal({ open, onOpenChange }: Props) {
   const [loading, setLoading] = useState(false);
   const [quizScores, setQuizScores] = useState<AcademicQuizScore[]>([]);
   const [performanceScores, setPerformanceScores] = useState<AcademicPerformanceScore[]>([]);
+  const [summativeScores, setSummativeScores] = useState<AcademicQuizScore[]>([]);
   const [termGrades, setTermGrades] = useState<AcademicTermGrade[]>([]);
 
   useEffect(() => {
     if (!open || !user) return;
     setLoading(true);
     (async () => {
-      const [quizRes, performanceRes, gradesRes] = await Promise.all([
+      const [quizRes, performanceRes, summativeRes, gradesRes] = await Promise.all([
         supabase
           .from("academic_quiz_scores")
           .select("id, title, score, max_score, created_at")
@@ -31,6 +32,11 @@ export function AcademicModal({ open, onOpenChange }: Props) {
           .order("created_at", { ascending: false }),
         supabase
           .from("academic_performance_scores")
+          .select("id, title, score, max_score, created_at")
+          .eq("student_id", user.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("academic_summative_scores")
           .select("id, title, score, max_score, created_at")
           .eq("student_id", user.id)
           .order("created_at", { ascending: false }),
@@ -43,6 +49,7 @@ export function AcademicModal({ open, onOpenChange }: Props) {
 
       setQuizScores((quizRes.data ?? []) as AcademicQuizScore[]);
       setPerformanceScores((performanceRes.data ?? []) as AcademicPerformanceScore[]);
+      setSummativeScores((summativeRes.data ?? []) as AcademicQuizScore[]);
       setTermGrades((gradesRes.data ?? []) as AcademicTermGrade[]);
       setLoading(false);
     })();
@@ -86,6 +93,9 @@ export function AcademicModal({ open, onOpenChange }: Props) {
                 <TabsTrigger value="performance" className="rounded-xl px-3 py-2 text-xs">
                   Performance
                 </TabsTrigger>
+                <TabsTrigger value="summative" className="rounded-xl px-3 py-2 text-xs">
+                  Summative
+                </TabsTrigger>
                 {TERM_OPTIONS.map((term) => (
                   <TabsTrigger key={term.value} value={term.value} className="rounded-xl px-3 py-2 text-xs">
                     Final Grades {term.label}
@@ -115,6 +125,10 @@ export function AcademicModal({ open, onOpenChange }: Props) {
                     empty="No performance scores yet."
                     rows={performanceScores}
                   />
+                </TabsContent>
+
+                <TabsContent value="summative">
+                  <ScoreList title="Summative Tests" empty="No summative test scores yet." rows={summativeScores} />
                 </TabsContent>
 
                 {TERM_OPTIONS.map((term, index) => (
