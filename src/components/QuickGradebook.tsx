@@ -58,7 +58,7 @@ function sortByLastName(list: GradebookStudent[]) {
   });
 }
 
-export function QuickGradebook({ students, onStudentsChanged }: { students: GradebookStudent[]; onStudentsChanged?: () => void }) {
+export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
   const [section, setSection] = useState<string>("");
   const [kind, setKind] = useState<Kind>("quiz");
   const [entryMode, setEntryMode] = useState<"assessment" | "student">("assessment");
@@ -612,8 +612,6 @@ export function QuickGradebook({ students, onStudentsChanged }: { students: Grad
           )}
         </div>
       </div>
-
-      {onStudentsChanged && <span className="hidden" />}
     </div>
   );
 }
