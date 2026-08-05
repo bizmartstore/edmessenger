@@ -549,8 +549,8 @@ export function GotchiTowerApp({ onBack }: { onBack: () => void }) {
       const onInteract = (evt: FloorInteractEvent) => {
         void handleInteract(evt);
       };
-      game.events.on("gt-player-move", onMove);
-      game.events.on("gt-interact", onInteract);
+      game.events.on("gt-player-move", onMove as (...args: unknown[]) => void);
+      game.events.on("gt-interact", onInteract as (...args: unknown[]) => void);
     });
 
     return () => {

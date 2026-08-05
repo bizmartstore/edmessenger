@@ -49,7 +49,7 @@ export function AcademicModal({ open, onOpenChange }: Props) {
   }, [open, user]);
 
   const gradeMap = useMemo(
-    () => new Map(termGrades.map((row) => [row.term_no, row.grade_value])),
+    () => new Map<number, string>(termGrades.map((row) => [Number(row.term_no), row.grade_value])),
     [termGrades],
   );
 

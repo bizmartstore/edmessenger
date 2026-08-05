@@ -110,7 +110,7 @@ export class GotchiTowerRoom {
           players: this.presenceList(),
         }),
       );
-      return new Response(null, { status: 101, webSocket: client });
+      return new Response(null, { status: 101, webSocket: client } as ResponseInit & { webSocket: unknown });
     }
 
     if (url.pathname.endsWith("/health")) {
