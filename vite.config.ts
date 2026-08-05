@@ -39,6 +39,6 @@ export default defineConfig({
     // Merge Durable Object named exports into the Worker entry (Nitro 3).
     cloudflare: {
       exports: "./exports.cloudflare.ts",
-    },
+    } as never,
   },
 });

@@ -1,13 +1,7 @@
 import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-export type LiveTable =
-  | "messages"
-  | "direct_messages"
-  | "announcements"
-  | "activities"
-  | "lessons"
-  | "quizzes";
+export type LiveTable = string;
 
 type LiveSpec = {
   table: LiveTable;

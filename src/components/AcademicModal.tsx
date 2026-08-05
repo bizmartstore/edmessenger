@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { BookOpenCheck, Loader2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import type { AcademicPerformanceScore, AcademicQuizScore, AcademicTab, AcademicTermGrade } from "@/lib/academic";
+import type {
+  AcademicPerformanceScore,
+  AcademicQuizScore,
+  AcademicTab,
+  AcademicTermGrade,
+} from "@/lib/academic";
 import { TERM_OPTIONS } from "@/lib/academic";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -17,13 +22,14 @@ export function AcademicModal({ open, onOpenChange }: Props) {
   const [loading, setLoading] = useState(false);
   const [quizScores, setQuizScores] = useState<AcademicQuizScore[]>([]);
   const [performanceScores, setPerformanceScores] = useState<AcademicPerformanceScore[]>([]);
+  const [summativeScores, setSummativeScores] = useState<AcademicQuizScore[]>([]);
   const [termGrades, setTermGrades] = useState<AcademicTermGrade[]>([]);
 
   useEffect(() => {
     if (!open || !user) return;
     setLoading(true);
     (async () => {
-      const [quizRes, performanceRes, gradesRes] = await Promise.all([
+      const [quizRes, performanceRes, summativeRes, gradesRes] = await Promise.all([
         supabase
           .from("academic_quiz_scores")
           .select("id, title, score, max_score, created_at")
@@ -31,6 +37,11 @@ export function AcademicModal({ open, onOpenChange }: Props) {
           .order("created_at", { ascending: false }),
         supabase
           .from("academic_performance_scores")
+          .select("id, title, score, max_score, created_at")
+          .eq("student_id", user.id)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("academic_summative_scores")
           .select("id, title, score, max_score, created_at")
           .eq("student_id", user.id)
           .order("created_at", { ascending: false }),
@@ -43,13 +54,14 @@ export function AcademicModal({ open, onOpenChange }: Props) {
 
       setQuizScores((quizRes.data ?? []) as AcademicQuizScore[]);
       setPerformanceScores((performanceRes.data ?? []) as AcademicPerformanceScore[]);
+      setSummativeScores((summativeRes.data ?? []) as AcademicQuizScore[]);
       setTermGrades((gradesRes.data ?? []) as AcademicTermGrade[]);
       setLoading(false);
     })();
   }, [open, user]);
 
   const gradeMap = useMemo(
-    () => new Map(termGrades.map((row) => [row.term_no, row.grade_value])),
+    () => new Map<number, string>(termGrades.map((row) => [Number(row.term_no), row.grade_value])),
     [termGrades],
   );
 
@@ -77,7 +89,11 @@ export function AcademicModal({ open, onOpenChange }: Props) {
         </header>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6">
-          <Tabs value={tab} onValueChange={(value) => setTab(value as AcademicTab)} className="w-full">
+          <Tabs
+            value={tab}
+            onValueChange={(value) => setTab(value as AcademicTab)}
+            className="w-full"
+          >
             <div className="overflow-x-auto pb-2">
               <TabsList className="inline-flex h-auto min-w-max gap-1 rounded-2xl p-1">
                 <TabsTrigger value="quizzes" className="rounded-xl px-3 py-2 text-xs">
@@ -86,8 +102,15 @@ export function AcademicModal({ open, onOpenChange }: Props) {
                 <TabsTrigger value="performance" className="rounded-xl px-3 py-2 text-xs">
                   Performance
                 </TabsTrigger>
+                <TabsTrigger value="summative" className="rounded-xl px-3 py-2 text-xs">
+                  Summative
+                </TabsTrigger>
                 {TERM_OPTIONS.map((term) => (
-                  <TabsTrigger key={term.value} value={term.value} className="rounded-xl px-3 py-2 text-xs">
+                  <TabsTrigger
+                    key={term.value}
+                    value={term.value}
+                    className="rounded-xl px-3 py-2 text-xs"
+                  >
                     Final Grades {term.label}
                   </TabsTrigger>
                 ))}
@@ -102,11 +125,7 @@ export function AcademicModal({ open, onOpenChange }: Props) {
             ) : (
               <>
                 <TabsContent value="quizzes">
-                  <ScoreList
-                    title="Quiz Scores"
-                    empty="No quiz scores yet."
-                    rows={quizScores}
-                  />
+                  <ScoreList title="Quiz Scores" empty="No quiz scores yet." rows={quizScores} />
                 </TabsContent>
 
                 <TabsContent value="performance">
@@ -117,10 +136,20 @@ export function AcademicModal({ open, onOpenChange }: Props) {
                   />
                 </TabsContent>
 
+                <TabsContent value="summative">
+                  <ScoreList
+                    title="Summative Tests"
+                    empty="No summative test scores yet."
+                    rows={summativeScores}
+                  />
+                </TabsContent>
+
                 {TERM_OPTIONS.map((term, index) => (
                   <TabsContent key={term.value} value={term.value}>
                     <div className="rounded-3xl border border-border bg-card p-5 shadow-card">
-                      <div className="text-xs uppercase tracking-widest text-muted-foreground">Final Grade</div>
+                      <div className="text-xs uppercase tracking-widest text-muted-foreground">
+                        Final Grade
+                      </div>
                       <div className="mt-2 text-3xl font-extrabold">
                         {gradeMap.get(index + 1) || "Not available yet"}
                       </div>
@@ -160,7 +189,8 @@ function ScoreList({
           <div key={row.id} className="rounded-2xl border border-border bg-card p-4 shadow-card">
             <div className="font-semibold text-sm">{row.title}</div>
             <div className="mt-2 text-sm text-muted-foreground">
-              Score: <span className="font-bold text-foreground">{row.score}</span> / {row.max_score}
+              Score: <span className="font-bold text-foreground">{row.score}</span> /{" "}
+              {row.max_score}
             </div>
           </div>
         ))

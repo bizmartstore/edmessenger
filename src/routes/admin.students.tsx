@@ -6,8 +6,21 @@ import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { Camera, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { buildFullName, getInitials, getProfileDisplayName, splitStoredName } from "@/lib/profile-name";
-import { parseScore, TERM_OPTIONS, type AcademicPerformanceScore, type AcademicQuizScore, type AcademicTab, type AcademicTermGrade } from "@/lib/academic";
+import {
+  buildFullName,
+  getInitials,
+  getProfileDisplayName,
+  splitStoredName,
+} from "@/lib/profile-name";
+import { QuickGradebook } from "@/components/QuickGradebook";
+import {
+  parseScore,
+  TERM_OPTIONS,
+  type AcademicPerformanceScore,
+  type AcademicQuizScore,
+  type AcademicTab,
+  type AcademicTermGrade,
+} from "@/lib/academic";
 
 export const Route = createFileRoute("/admin/students")({
   component: AdminStudents,
@@ -23,6 +36,7 @@ interface Row {
   avatar_url: string | null;
   school: string | null;
   contact_number: string | null;
+  section: string | null;
   created_at: string;
 }
 
@@ -35,6 +49,7 @@ function AdminStudents() {
   const [firstName, setFirstName] = useState("");
   const [middleName, setMiddleName] = useState("");
   const [school, setSchool] = useState("");
+  const [sectionValue, setSectionValue] = useState("");
   const [contact, setContact] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -42,28 +57,14 @@ function AdminStudents() {
   const [quizScores, setQuizScores] = useState<AcademicQuizScore[]>([]);
   const [performanceScores, setPerformanceScores] = useState<AcademicPerformanceScore[]>([]);
   const [termGrades, setTermGrades] = useState<AcademicTermGrade[]>([]);
-  const [batchBusy, setBatchBusy] = useState(false);
-
-  // Batch gradebook state (quick add without opening student modal).
-  const [quizTitles, setQuizTitles] = useState<{ title: string; max_score: number }[]>([]);
-  const [performanceTitles, setPerformanceTitles] = useState<{ title: string; max_score: number }[]>([]);
-  const [quizTitlePick, setQuizTitlePick] = useState("");
-  const [performanceTitlePick, setPerformanceTitlePick] = useState("");
-  const [quizBatchTitle, setQuizBatchTitle] = useState("");
-  const [quizBatchMaxScore, setQuizBatchMaxScore] = useState("0");
-  const [quizBatchScores, setQuizBatchScores] = useState<Record<string, string>>({});
-
-  const [performanceBatchTitle, setPerformanceBatchTitle] = useState("");
-  const [performanceBatchMaxScore, setPerformanceBatchMaxScore] = useState("0");
-  const [performanceBatchScores, setPerformanceBatchScores] = useState<Record<string, string>>({});
-
-  const [termBatchNo, setTermBatchNo] = useState<1 | 2 | 3>(1);
-  const [termBatchGrades, setTermBatchGrades] = useState<Record<string, string>>({});
 
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
-    const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("created_at", { ascending: false });
     setStudents((data ?? []) as Row[]);
   }
 
@@ -79,6 +80,7 @@ function AdminStudents() {
     setFirstName((s.first_name ?? parsed.firstName ?? "").toUpperCase());
     setMiddleName((s.middle_name ?? parsed.middleName ?? "").toUpperCase());
     setSchool((s.school ?? "").toUpperCase());
+    setSectionValue((s.section ?? "").toUpperCase());
     setContact(s.contact_number ?? "");
     setAvatarUrl(s.avatar_url);
     void loadAcademic(s.id);
@@ -145,6 +147,7 @@ function AdminStudents() {
           middle_name: nextMiddle || null,
           full_name: buildFullName(nextLast, nextFirst, nextMiddle) || null,
           school: school.trim().toUpperCase() || null,
+          section: sectionValue.trim().toUpperCase() || null,
           contact_number: contact.trim() || null,
           avatar_url: avatarUrl,
           updated_at: new Date().toISOString(),
@@ -187,7 +190,10 @@ function AdminStudents() {
     if (error) toast.error(error.message);
   }
 
-  async function deleteAcademicRow(table: "academic_quiz_scores" | "academic_performance_scores", id: string) {
+  async function deleteAcademicRow(
+    table: "academic_quiz_scores" | "academic_performance_scores",
+    id: string,
+  ) {
     const { error } = await supabase.from(table).delete().eq("id", id);
     if (error) {
       toast.error(error.message);
@@ -267,255 +273,6 @@ function AdminStudents() {
 
   const alphabeticalStudents = useMemo(() => sortByLastName(students), [students]);
 
-  async function loadTitleCatalog() {
-    const [quizRes, performanceRes] = await Promise.all([
-      supabase.from("academic_quiz_scores").select("title, max_score").order("created_at", { ascending: false }),
-      supabase
-        .from("academic_performance_scores")
-        .select("title, max_score")
-        .order("created_at", { ascending: false }),
-    ]);
-    if (quizRes.error) throw quizRes.error;
-    if (performanceRes.error) throw performanceRes.error;
-    setQuizTitles(uniqueTitlesFromRows((quizRes.data ?? []) as { title: string; max_score: number | null }[]));
-    setPerformanceTitles(
-      uniqueTitlesFromRows((performanceRes.data ?? []) as { title: string; max_score: number | null }[]),
-    );
-  }
-
-  async function applyQuizTitle(title: string, maxScoreHint?: number) {
-    const clean = title.trim();
-    setQuizBatchTitle(clean);
-    setQuizTitlePick(clean);
-    if (maxScoreHint != null) setQuizBatchMaxScore(String(maxScoreHint));
-
-    if (!clean || alphabeticalStudents.length === 0) {
-      setQuizBatchScores({});
-      return;
-    }
-
-    const ids = alphabeticalStudents.map((s) => s.id);
-    const { data, error } = await supabase
-      .from("academic_quiz_scores")
-      .select("student_id, score, max_score")
-      .eq("title", clean)
-      .in("student_id", ids);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-
-    const scoreMap: Record<string, string> = {};
-    let foundMax: number | null = maxScoreHint ?? null;
-    for (const row of (data ?? []) as { student_id: string; score: number; max_score: number }[]) {
-      scoreMap[row.student_id] = String(row.score ?? "");
-      if (foundMax == null && row.max_score != null) foundMax = Number(row.max_score);
-    }
-    setQuizBatchScores(scoreMap);
-    if (foundMax != null) setQuizBatchMaxScore(String(foundMax));
-  }
-
-  async function applyPerformanceTitle(title: string, maxScoreHint?: number) {
-    const clean = title.trim();
-    setPerformanceBatchTitle(clean);
-    setPerformanceTitlePick(clean);
-    if (maxScoreHint != null) setPerformanceBatchMaxScore(String(maxScoreHint));
-
-    if (!clean || alphabeticalStudents.length === 0) {
-      setPerformanceBatchScores({});
-      return;
-    }
-
-    const ids = alphabeticalStudents.map((s) => s.id);
-    const { data, error } = await supabase
-      .from("academic_performance_scores")
-      .select("student_id, score, max_score")
-      .eq("title", clean)
-      .in("student_id", ids);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
-
-    const scoreMap: Record<string, string> = {};
-    let foundMax: number | null = maxScoreHint ?? null;
-    for (const row of (data ?? []) as { student_id: string; score: number; max_score: number }[]) {
-      scoreMap[row.student_id] = String(row.score ?? "");
-      if (foundMax == null && row.max_score != null) foundMax = Number(row.max_score);
-    }
-    setPerformanceBatchScores(scoreMap);
-    if (foundMax != null) setPerformanceBatchMaxScore(String(foundMax));
-  }
-
-  useEffect(() => {
-    if (mode !== "gradebook") return;
-    void (async () => {
-      try {
-        await loadTitleCatalog();
-      } catch (e: unknown) {
-        toast.error(e instanceof Error ? e.message : "Could not load existing titles");
-      }
-    })();
-  }, [mode]);
-
-  useEffect(() => {
-    if (mode !== "gradebook") return;
-    const ids = students.map((s) => s.id);
-    if (!ids.length) {
-      setTermBatchGrades({});
-      return;
-    }
-    void (async () => {
-      const { data, error } = await supabase
-        .from("academic_term_grades")
-        .select("student_id, grade_value")
-        .eq("term_no", termBatchNo)
-        .in("student_id", ids);
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
-      const map: Record<string, string> = {};
-      (data ?? []).forEach((row: { student_id: string; grade_value: string }) => {
-        map[row.student_id] = row.grade_value;
-      });
-      setTermBatchGrades(map);
-    })();
-  }, [mode, termBatchNo, students]);
-
-  async function saveQuizBatch() {
-    const title = quizBatchTitle.trim();
-    if (!title) {
-      toast.error("Enter or pick a quiz title");
-      return;
-    }
-    const max = parseScore(quizBatchMaxScore);
-    if (!Number.isFinite(max) || max < 0) {
-      toast.error("Enter a valid max score");
-      return;
-    }
-    const toInsert = alphabeticalStudents
-      .map((s) => {
-        const v = quizBatchScores[s.id];
-        if (v == null || v.trim() === "") return null;
-        return {
-          student_id: s.id,
-          title,
-          score: parseScore(v),
-          max_score: max,
-        };
-      })
-      .filter(Boolean) as { student_id: string; title: string; score: number; max_score: number }[];
-
-    if (toInsert.length === 0) {
-      toast.error("Enter at least one quiz score");
-      return;
-    }
-
-    setBatchBusy(true);
-    try {
-      const allIds = alphabeticalStudents.map((s) => s.id);
-      const { error: delError } = await supabase
-        .from("academic_quiz_scores")
-        .delete()
-        .eq("title", title)
-        .in("student_id", allIds);
-      if (delError) throw delError;
-      const { error } = await supabase.from("academic_quiz_scores").insert(toInsert);
-      if (error) throw error;
-      toast.success(`Quiz scores saved for ${toInsert.length} student(s)`);
-      setQuizTitlePick(title);
-      await loadTitleCatalog();
-      await applyQuizTitle(title, max);
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Failed to save quiz scores");
-    } finally {
-      setBatchBusy(false);
-    }
-  }
-
-  async function savePerformanceBatch() {
-    const title = performanceBatchTitle.trim();
-    if (!title) {
-      toast.error("Enter or pick a performance title");
-      return;
-    }
-    const max = parseScore(performanceBatchMaxScore);
-    if (!Number.isFinite(max) || max < 0) {
-      toast.error("Enter a valid max score");
-      return;
-    }
-    const toInsert = alphabeticalStudents
-      .map((s) => {
-        const v = performanceBatchScores[s.id];
-        if (v == null || v.trim() === "") return null;
-        return {
-          student_id: s.id,
-          title,
-          score: parseScore(v),
-          max_score: max,
-        };
-      })
-      .filter(Boolean) as { student_id: string; title: string; score: number; max_score: number }[];
-
-    if (toInsert.length === 0) {
-      toast.error("Enter at least one performance score");
-      return;
-    }
-
-    setBatchBusy(true);
-    try {
-      const allIds = alphabeticalStudents.map((s) => s.id);
-      const { error: delError } = await supabase
-        .from("academic_performance_scores")
-        .delete()
-        .eq("title", title)
-        .in("student_id", allIds);
-      if (delError) throw delError;
-      const { error } = await supabase.from("academic_performance_scores").insert(toInsert);
-      if (error) throw error;
-      toast.success(`Performance scores saved for ${toInsert.length} student(s)`);
-      setPerformanceTitlePick(title);
-      await loadTitleCatalog();
-      await applyPerformanceTitle(title, max);
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Failed to save performance scores");
-    } finally {
-      setBatchBusy(false);
-    }
-  }
-
-  async function saveTermBatch() {
-    const ids = alphabeticalStudents.map((s) => s.id);
-    const nonEmpty = ids
-      .map((studentId) => {
-        const v = termBatchGrades[studentId];
-        if (v == null || v.trim() === "") return null;
-        return { student_id: studentId, term_no: termBatchNo, grade_value: v.trim() };
-      })
-      .filter(Boolean) as { student_id: string; term_no: 1 | 2 | 3; grade_value: string }[];
-
-    const emptyIds = ids.filter((studentId) => !(termBatchGrades[studentId] ?? "").trim());
-
-    setBatchBusy(true);
-    try {
-      if (emptyIds.length) {
-        await supabase.from("academic_term_grades").delete().in("student_id", emptyIds).eq("term_no", termBatchNo);
-      }
-      if (nonEmpty.length) {
-        const { error } = await supabase.from("academic_term_grades").upsert(nonEmpty, {
-          onConflict: "student_id,term_no",
-        });
-        if (error) throw error;
-      }
-      toast.success("Term grades saved");
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Failed to save term grades");
-    } finally {
-      setBatchBusy(false);
-    }
-  }
-
   return (
     <div>
       <div className="flex gap-2 mb-3">
@@ -526,7 +283,9 @@ function AdminStudents() {
             setMode("single");
           }}
           className={`flex-1 py-2 rounded-2xl text-sm font-semibold transition-all ${
-            mode === "single" ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground hover:bg-secondary"
+            mode === "single"
+              ? "gradient-primary text-primary-foreground shadow-glow"
+              : "bg-muted text-muted-foreground hover:bg-secondary"
           }`}
         >
           1-by-1 Student Editor
@@ -538,7 +297,9 @@ function AdminStudents() {
             setMode("gradebook");
           }}
           className={`flex-1 py-2 rounded-2xl text-sm font-semibold transition-all ${
-            mode === "gradebook" ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground hover:bg-secondary"
+            mode === "gradebook"
+              ? "gradient-primary text-primary-foreground shadow-glow"
+              : "bg-muted text-muted-foreground hover:bg-secondary"
           }`}
         >
           Quick Gradebook
@@ -554,11 +315,15 @@ function AdminStudents() {
             className="mb-3 w-full rounded-2xl border border-border bg-muted px-4 py-3 text-sm outline-none focus:border-primary"
           />
           <div className="text-sm mb-3">
-            <span className="font-bold">{students.length}</span> student{students.length === 1 ? "" : "s"} registered
+            <span className="font-bold">{students.length}</span> student
+            {students.length === 1 ? "" : "s"} registered
           </div>
           <div className="rounded-2xl bg-card border border-border overflow-hidden">
             {filteredStudents.map((s) => (
-              <div key={s.id} className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-b-0">
+              <div
+                key={s.id}
+                className="flex items-center gap-3 px-4 py-3 border-b border-border last:border-b-0"
+              >
                 {s.avatar_url ? (
                   <img src={s.avatar_url} alt="" className="h-10 w-10 rounded-full object-cover" />
                 ) : (
@@ -567,11 +332,13 @@ function AdminStudents() {
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="font-semibold text-sm truncate">{getProfileDisplayName(s) || "Student"}</div>
+                  <div className="font-semibold text-sm truncate">
+                    {getProfileDisplayName(s) || "Student"}
+                  </div>
                   <div className="text-xs text-muted-foreground truncate">{s.email}</div>
-                  {(s.school || s.contact_number) && (
+                  {(s.school || s.section || s.contact_number) && (
                     <div className="text-[10px] text-muted-foreground truncate">
-                      {[s.school, s.contact_number].filter(Boolean).join(" · ")}
+                      {[s.section, s.school, s.contact_number].filter(Boolean).join(" · ")}
                     </div>
                   )}
                 </div>
@@ -591,289 +358,7 @@ function AdminStudents() {
           </div>
         </>
       ) : (
-        <div className="space-y-4">
-          <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-bold text-sm">Quiz Scores (batch)</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  Enter each student&apos;s score for the quiz title, then save once.
-                </div>
-              </div>
-              <button
-                type="button"
-                disabled={batchBusy || alphabeticalStudents.length === 0}
-                onClick={() => void saveQuizBatch()}
-                className="rounded-2xl gradient-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-glow disabled:opacity-60"
-              >
-                {batchBusy ? "Saving…" : "Save quiz scores"}
-              </button>
-            </div>
-
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="block sm:col-span-2">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Pick existing quiz title</span>
-                <select
-                  value={quizTitlePick}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    if (!value) {
-                      setQuizTitlePick("");
-                      setQuizBatchTitle("");
-                      setQuizBatchMaxScore("0");
-                      setQuizBatchScores({});
-                      return;
-                    }
-                    const found = quizTitles.find((t) => t.title === value);
-                    void applyQuizTitle(value, found?.max_score);
-                  }}
-                  className="mt-1 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
-                >
-                  <option value="">New quiz title…</option>
-                  {quizTitles.map((t) => (
-                    <option key={t.title} value={t.title}>
-                      {t.title} (max {t.max_score})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Quiz title</span>
-                <input
-                  value={quizBatchTitle}
-                  onChange={(e) => {
-                    setQuizBatchTitle(e.target.value);
-                    setQuizTitlePick("");
-                  }}
-                  placeholder="e.g. Quiz 1 (Module 1)"
-                  className="mt-1 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
-                />
-              </label>
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Max score</span>
-                <input
-                  value={quizBatchMaxScore}
-                  onChange={(e) => setQuizBatchMaxScore(e.target.value)}
-                  type="number"
-                  min={0}
-                  step={1}
-                  className="mt-1 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
-                />
-              </label>
-            </div>
-
-            <div className="mt-3 text-[10px] uppercase tracking-widest text-muted-foreground">
-              Students A–Z by last name
-            </div>
-
-            <div className="mt-4 space-y-2">
-              {alphabeticalStudents.length === 0 ? (
-                <div className="text-xs text-muted-foreground py-6 text-center">No students yet.</div>
-              ) : (
-                <div className="space-y-2">
-                  {alphabeticalStudents.map((s) => (
-                    <div key={s.id} className="grid grid-cols-[1fr,110px] items-center gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="h-8 w-8 rounded-xl gradient-primary grid place-items-center text-primary-foreground font-bold shrink-0">
-                            {getInitials(s)}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-semibold truncate">{getProfileDisplayName(s) || "Student"}</div>
-                            <div className="text-[10px] text-muted-foreground truncate">{s.email}</div>
-                          </div>
-                        </div>
-                      </div>
-                      <input
-                        value={quizBatchScores[s.id] ?? ""}
-                        onChange={(e) => setQuizBatchScores((prev) => ({ ...prev, [s.id]: e.target.value }))}
-                        placeholder="Score"
-                        type="number"
-                        min={0}
-                        step={1}
-                        className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-bold text-sm">Performance Scores (batch)</div>
-                <div className="text-xs text-muted-foreground mt-1">
-                  Enter each student&apos;s score for the performance title, then save once.
-                </div>
-              </div>
-              <button
-                type="button"
-                disabled={batchBusy || alphabeticalStudents.length === 0}
-                onClick={() => void savePerformanceBatch()}
-                className="rounded-2xl gradient-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-glow disabled:opacity-60"
-              >
-                {batchBusy ? "Saving…" : "Save performance scores"}
-              </button>
-            </div>
-
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="block sm:col-span-2">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Pick existing performance title</span>
-                <select
-                  value={performanceTitlePick}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    if (!value) {
-                      setPerformanceTitlePick("");
-                      setPerformanceBatchTitle("");
-                      setPerformanceBatchMaxScore("0");
-                      setPerformanceBatchScores({});
-                      return;
-                    }
-                    const found = performanceTitles.find((t) => t.title === value);
-                    void applyPerformanceTitle(value, found?.max_score);
-                  }}
-                  className="mt-1 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
-                >
-                  <option value="">New performance title…</option>
-                  {performanceTitles.map((t) => (
-                    <option key={t.title} value={t.title}>
-                      {t.title} (max {t.max_score})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Performance title</span>
-                <input
-                  value={performanceBatchTitle}
-                  onChange={(e) => {
-                    setPerformanceBatchTitle(e.target.value);
-                    setPerformanceTitlePick("");
-                  }}
-                  placeholder="e.g. Speaking (Rubric)"
-                  className="mt-1 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
-                />
-              </label>
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Max score</span>
-                <input
-                  value={performanceBatchMaxScore}
-                  onChange={(e) => setPerformanceBatchMaxScore(e.target.value)}
-                  type="number"
-                  min={0}
-                  step={1}
-                  className="mt-1 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
-                />
-              </label>
-            </div>
-
-            <div className="mt-3 text-[10px] uppercase tracking-widest text-muted-foreground">
-              Students A–Z by last name
-            </div>
-
-            <div className="mt-4 space-y-2">
-              {alphabeticalStudents.length === 0 ? (
-                <div className="text-xs text-muted-foreground py-6 text-center">No students yet.</div>
-              ) : (
-                <div className="space-y-2">
-                  {alphabeticalStudents.map((s) => (
-                    <div key={s.id} className="grid grid-cols-[1fr,110px] items-center gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="h-8 w-8 rounded-xl gradient-primary grid place-items-center text-primary-foreground font-bold shrink-0">
-                            {getInitials(s)}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-semibold truncate">{getProfileDisplayName(s) || "Student"}</div>
-                            <div className="text-[10px] text-muted-foreground truncate">{s.email}</div>
-                          </div>
-                        </div>
-                      </div>
-                      <input
-                        value={performanceBatchScores[s.id] ?? ""}
-                        onChange={(e) => setPerformanceBatchScores((prev) => ({ ...prev, [s.id]: e.target.value }))}
-                        placeholder="Score"
-                        type="number"
-                        min={0}
-                        step={1}
-                        className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-bold text-sm">Final Grades (batch)</div>
-                <div className="text-xs text-muted-foreground mt-1">Enter term grades by student, then save once.</div>
-              </div>
-              <button
-                type="button"
-                disabled={batchBusy || alphabeticalStudents.length === 0}
-                onClick={() => void saveTermBatch()}
-                className="rounded-2xl gradient-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-glow disabled:opacity-60"
-              >
-                {batchBusy ? "Saving…" : "Save term grades"}
-              </button>
-            </div>
-
-            <div className="mt-3 flex gap-2 flex-wrap">
-              {([1, 2, 3] as const).map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setTermBatchNo(n)}
-                  className={`px-3 py-2 rounded-2xl text-sm font-semibold transition-all ${
-                    termBatchNo === n ? "gradient-primary text-primary-foreground shadow-glow" : "bg-muted text-muted-foreground hover:bg-secondary"
-                  }`}
-                >
-                  Term {n}
-                </button>
-              ))}
-            </div>
-
-            <div className="mt-3 text-[10px] uppercase tracking-widest text-muted-foreground">
-              Students A–Z by last name
-            </div>
-
-            <div className="mt-4 space-y-2">
-              {alphabeticalStudents.length === 0 ? (
-                <div className="text-xs text-muted-foreground py-6 text-center">No students yet.</div>
-              ) : (
-                <div className="space-y-2">
-                  {alphabeticalStudents.map((s) => (
-                    <div key={s.id} className="grid grid-cols-[1fr,170px] items-center gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="h-8 w-8 rounded-xl gradient-primary grid place-items-center text-primary-foreground font-bold shrink-0">
-                            {getInitials(s)}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-semibold truncate">{getProfileDisplayName(s) || "Student"}</div>
-                            <div className="text-[10px] text-muted-foreground truncate">{s.email}</div>
-                          </div>
-                        </div>
-                      </div>
-                      <input
-                        value={termBatchGrades[s.id] ?? ""}
-                        onChange={(e) => setTermBatchGrades((prev) => ({ ...prev, [s.id]: e.target.value }))}
-                        placeholder="Grade (e.g. A, 95, PASSED)"
-                        className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <QuickGradebook students={students} />
       )}
 
       {editing && (
@@ -881,7 +366,11 @@ function AdminStudents() {
           <div className="w-full max-w-3xl rounded-3xl bg-card border border-border shadow-glow p-5 animate-fade-up max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-bold">Edit student</h2>
-              <button type="button" onClick={() => setEditing(null)} className="p-2 rounded-xl hover:bg-muted">
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                className="p-2 rounded-xl hover:bg-muted"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -892,7 +381,11 @@ function AdminStudents() {
                   <img src={avatarUrl} alt="" className="h-20 w-20 rounded-full object-cover" />
                 ) : (
                   <div className="h-20 w-20 rounded-full gradient-primary grid place-items-center text-2xl font-bold text-primary-foreground">
-                    {getInitials({ first_name: firstName, last_name: lastName, full_name: editing.full_name })}
+                    {getInitials({
+                      first_name: firstName,
+                      last_name: lastName,
+                      full_name: editing.full_name,
+                    })}
                   </div>
                 )}
                 <span className="absolute bottom-0 right-0 h-7 w-7 rounded-full bg-card border grid place-items-center">
@@ -908,14 +401,28 @@ function AdminStudents() {
               />
             </div>
 
-            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AcademicTab | "profile")} className="w-full">
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value as AcademicTab | "profile")}
+              className="w-full"
+            >
               <div className="overflow-x-auto pb-2">
                 <TabsList className="inline-flex h-auto min-w-max gap-1 rounded-2xl p-1">
-                  <TabsTrigger value="profile" className="rounded-xl px-3 py-2 text-xs">Profile</TabsTrigger>
-                  <TabsTrigger value="quizzes" className="rounded-xl px-3 py-2 text-xs">Quizzes</TabsTrigger>
-                  <TabsTrigger value="performance" className="rounded-xl px-3 py-2 text-xs">Performance</TabsTrigger>
+                  <TabsTrigger value="profile" className="rounded-xl px-3 py-2 text-xs">
+                    Profile
+                  </TabsTrigger>
+                  <TabsTrigger value="quizzes" className="rounded-xl px-3 py-2 text-xs">
+                    Quizzes
+                  </TabsTrigger>
+                  <TabsTrigger value="performance" className="rounded-xl px-3 py-2 text-xs">
+                    Performance
+                  </TabsTrigger>
                   {TERM_OPTIONS.map((term) => (
-                    <TabsTrigger key={term.value} value={term.value} className="rounded-xl px-3 py-2 text-xs">
+                    <TabsTrigger
+                      key={term.value}
+                      value={term.value}
+                      className="rounded-xl px-3 py-2 text-xs"
+                    >
                       {term.label}
                     </TabsTrigger>
                   ))}
@@ -924,7 +431,9 @@ function AdminStudents() {
 
               <TabsContent value="profile" className="space-y-3">
                 <label className="block">
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Last name</span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Last name
+                  </span>
                   <input
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value.toUpperCase())}
@@ -932,7 +441,9 @@ function AdminStudents() {
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">First name</span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    First name
+                  </span>
                   <input
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value.toUpperCase())}
@@ -940,7 +451,9 @@ function AdminStudents() {
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Middle name (optional)</span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Middle name (optional)
+                  </span>
                   <input
                     value={middleName}
                     onChange={(e) => setMiddleName(e.target.value.toUpperCase())}
@@ -948,7 +461,9 @@ function AdminStudents() {
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">School</span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    School
+                  </span>
                   <input
                     value={school}
                     onChange={(e) => setSchool(e.target.value.toUpperCase())}
@@ -956,7 +471,20 @@ function AdminStudents() {
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Email</span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Section
+                  </span>
+                  <input
+                    value={sectionValue}
+                    onChange={(e) => setSectionValue(e.target.value.toUpperCase())}
+                    placeholder="e.g. GRADE 7 - RIZAL"
+                    className="mt-1 w-full px-3 py-2.5 rounded-xl bg-muted border border-border text-sm uppercase outline-none focus:border-primary"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Email
+                  </span>
                   <input
                     value={editing.email ?? ""}
                     disabled
@@ -964,7 +492,9 @@ function AdminStudents() {
                   />
                 </label>
                 <label className="block">
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Contact number</span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Contact number
+                  </span>
                   <input
                     value={contact}
                     onChange={(e) => setContact(e.target.value)}
@@ -1002,7 +532,9 @@ function AdminStudents() {
                   emptyLabel="No performance scores yet."
                   onAdd={() => void addAcademicRow("academic_performance_scores")}
                   onChange={(row) => {
-                    setPerformanceScores((prev) => prev.map((item) => (item.id === row.id ? row : item)));
+                    setPerformanceScores((prev) =>
+                      prev.map((item) => (item.id === row.id ? row : item)),
+                    );
                     void updateAcademicRow("academic_performance_scores", row.id, row);
                   }}
                   onDelete={(id) => void deleteAcademicRow("academic_performance_scores", id)}
@@ -1013,7 +545,9 @@ function AdminStudents() {
                 <TabsContent key={term.value} value={term.value}>
                   <TermGradeEditor
                     termLabel={term.label}
-                    currentValue={termGrades.find((row) => row.term_no === index + 1)?.grade_value ?? ""}
+                    currentValue={
+                      termGrades.find((row) => row.term_no === index + 1)?.grade_value ?? ""
+                    }
                     onSave={(value) => void saveTermGrade((index + 1) as 1 | 2 | 3, value)}
                   />
                 </TabsContent>
