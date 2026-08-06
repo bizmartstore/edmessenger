@@ -90,6 +90,17 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
   const [termNo, setTermNo] = useState<1 | 2 | 3>(1);
   const [termGrades, setTermGrades] = useState<Record<string, string>>({});
 
+  const [query, setQuery] = useState("");
+  const [subjectFilter, setSubjectFilter] = useState("");
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+
+  useEffect(() => {
+    void listSubjects()
+      .then(setSubjects)
+      .catch(() => setSubjects([]));
+  }, []);
+
+
   const sections = useMemo(() => {
     const set = new Set<string>();
     let hasUnassigned = false;
