@@ -434,9 +434,10 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
         )}
 
         <div className="mt-2 text-[11px] text-muted-foreground">
-          {sectionStudents.length} student{sectionStudents.length === 1 ? "" : "s"} in this section.
-          Set a student&apos;s section in the 1-by-1 Student Editor.
+          {sectionStudents.length} student{sectionStudents.length === 1 ? "" : "s"} match. Set a
+          student&apos;s section in the 1-by-1 Student Editor.
         </div>
+
       </div>
 
       {/* Kind + entry mode */}
