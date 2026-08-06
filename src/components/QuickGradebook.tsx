@@ -380,15 +380,16 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
     <div className="space-y-4">
       {/* Section picker */}
       <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
-        <div className="font-bold text-sm">Section</div>
+        <div className="font-bold text-sm">Section, subject &amp; search</div>
         <div className="text-xs text-muted-foreground mt-1">
-          Only students in the selected section can be graded below.
+          Only the students matching these filters can be graded below.
         </div>
         <select
           value={section}
           onChange={(e) => setSection(e.target.value)}
           className="mt-3 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
         >
+          <option value="">All sections</option>
           {sections.list.map((s) => (
             <option key={s} value={s}>
               {s}
@@ -396,6 +397,42 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
           ))}
           {sections.hasUnassigned && <option value={UNASSIGNED}>No section yet</option>}
         </select>
+
+        <select
+          value={subjectFilter}
+          onChange={(e) => setSubjectFilter(e.target.value)}
+          className="mt-2 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
+        >
+          <option value="">All subjects</option>
+          {subjects.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+
+        <div className="mt-2 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search student by name or email…"
+            className="w-full rounded-xl border border-border bg-muted pl-9 pr-3 py-2.5 text-sm outline-none focus:border-primary"
+          />
+        </div>
+        {(query || subjectFilter) && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setSubjectFilter("");
+            }}
+            className="mt-2 text-[11px] font-semibold text-primary"
+          >
+            Clear search &amp; subject filter
+          </button>
+        )}
+
         <div className="mt-2 text-[11px] text-muted-foreground">
           {sectionStudents.length} student{sectionStudents.length === 1 ? "" : "s"} in this section.
           Set a student&apos;s section in the 1-by-1 Student Editor.
