@@ -41,7 +41,7 @@ function ActivitiesPage() {
       return;
     }
     const [{ data }, { data: subs }] = await Promise.all([
-      supabase.from("activities").select("id, title, description, due_at, created_at").eq("subject_id", subjectId).order("created_at", { ascending: false }).limit(50),
+      supabase.from("activities").select("id, title, description, due_at, created_at, format").eq("subject_id", subjectId).order("created_at", { ascending: false }).limit(50),
       supabase.from("activity_submissions").select("activity_id").eq("user_id", user.id),
     ]);
     setItems((data ?? []) as Activity[]);
