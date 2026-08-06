@@ -109,13 +109,29 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
   }, [section, sections]);
 
   const sectionStudents = useMemo(() => {
-    if (!section) return [];
+    const q = query.trim().toLowerCase();
     const filtered = students.filter((s) => {
       const v = (s.section ?? "").trim().toUpperCase();
-      return section === UNASSIGNED ? !v : v === section;
+      const sectionOk = !section ? true : section === UNASSIGNED ? !v : v === section;
+      if (!sectionOk) return false;
+      if (subjectFilter && (s.selected_subject_id ?? "") !== subjectFilter) return false;
+      if (!q) return true;
+      const haystack = [
+        getProfileDisplayName(s),
+        s.full_name,
+        s.first_name,
+        s.last_name,
+        s.middle_name,
+        s.email,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
     });
     return sortByLastName(filtered);
-  }, [students, section]);
+  }, [students, section, subjectFilter, query]);
+
 
   const studentIds = useMemo(() => sectionStudents.map((s) => s.id), [sectionStudents]);
   const activeAssessment = assessments.find((a) => a.id === activeAssessmentId) ?? null;
