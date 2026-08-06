@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { getInitials, getProfileDisplayName, splitStoredName } from "@/lib/profile-name";
 import { parseScore } from "@/lib/academic";
+import { listSubjects, type Subject } from "@/lib/subjects";
 
 export type GradebookStudent = {
   id: string;
@@ -13,7 +14,9 @@ export type GradebookStudent = {
   middle_name: string | null;
   email: string | null;
   section?: string | null;
+  selected_subject_id?: string | null;
 };
+
 
 type Kind = "quiz" | "performance" | "summative";
 
@@ -87,6 +90,17 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
   const [termNo, setTermNo] = useState<1 | 2 | 3>(1);
   const [termGrades, setTermGrades] = useState<Record<string, string>>({});
 
+  const [query, setQuery] = useState("");
+  const [subjectFilter, setSubjectFilter] = useState("");
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+
+  useEffect(() => {
+    void listSubjects()
+      .then(setSubjects)
+      .catch(() => setSubjects([]));
+  }, []);
+
+
   const sections = useMemo(() => {
     const set = new Set<string>();
     let hasUnassigned = false;
@@ -106,20 +120,36 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
   }, [section, sections]);
 
   const sectionStudents = useMemo(() => {
-    if (!section) return [];
+    const q = query.trim().toLowerCase();
     const filtered = students.filter((s) => {
       const v = (s.section ?? "").trim().toUpperCase();
-      return section === UNASSIGNED ? !v : v === section;
+      const sectionOk = !section ? true : section === UNASSIGNED ? !v : v === section;
+      if (!sectionOk) return false;
+      if (subjectFilter && (s.selected_subject_id ?? "") !== subjectFilter) return false;
+      if (!q) return true;
+      const haystack = [
+        getProfileDisplayName(s),
+        s.full_name,
+        s.first_name,
+        s.last_name,
+        s.middle_name,
+        s.email,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
     });
     return sortByLastName(filtered);
-  }, [students, section]);
+  }, [students, section, subjectFilter, query]);
+
 
   const studentIds = useMemo(() => sectionStudents.map((s) => s.id), [sectionStudents]);
   const activeAssessment = assessments.find((a) => a.id === activeAssessmentId) ?? null;
 
   const loadAssessments = useCallback(async () => {
-    if (!section) return;
-    const sectionValue = section === UNASSIGNED ? null : section;
+    const sectionValue = !section || section === UNASSIGNED ? null : section;
+
     let q = supabase
       .from("academic_assessments")
       .select("id, kind, section, title, max_score")
@@ -216,7 +246,7 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
     try {
       const { error } = await supabase.from("academic_assessments").insert({
         kind,
-        section: section === UNASSIGNED ? null : section,
+        section: !section || section === UNASSIGNED ? null : section,
         title,
         max_score: max,
       });
@@ -350,15 +380,16 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
     <div className="space-y-4">
       {/* Section picker */}
       <div className="rounded-2xl bg-card border border-border p-4 shadow-card">
-        <div className="font-bold text-sm">Section</div>
+        <div className="font-bold text-sm">Section, subject &amp; search</div>
         <div className="text-xs text-muted-foreground mt-1">
-          Only students in the selected section can be graded below.
+          Only the students matching these filters can be graded below.
         </div>
         <select
           value={section}
           onChange={(e) => setSection(e.target.value)}
           className="mt-3 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
         >
+          <option value="">All sections</option>
           {sections.list.map((s) => (
             <option key={s} value={s}>
               {s}
@@ -366,10 +397,47 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
           ))}
           {sections.hasUnassigned && <option value={UNASSIGNED}>No section yet</option>}
         </select>
-        <div className="mt-2 text-[11px] text-muted-foreground">
-          {sectionStudents.length} student{sectionStudents.length === 1 ? "" : "s"} in this section.
-          Set a student&apos;s section in the 1-by-1 Student Editor.
+
+        <select
+          value={subjectFilter}
+          onChange={(e) => setSubjectFilter(e.target.value)}
+          className="mt-2 w-full rounded-xl border border-border bg-muted px-3 py-2.5 text-sm outline-none focus:border-primary"
+        >
+          <option value="">All subjects</option>
+          {subjects.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+
+        <div className="mt-2 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search student by name or email…"
+            className="w-full rounded-xl border border-border bg-muted pl-9 pr-3 py-2.5 text-sm outline-none focus:border-primary"
+          />
         </div>
+        {(query || subjectFilter) && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setSubjectFilter("");
+            }}
+            className="mt-2 text-[11px] font-semibold text-primary"
+          >
+            Clear search &amp; subject filter
+          </button>
+        )}
+
+        <div className="mt-2 text-[11px] text-muted-foreground">
+          {sectionStudents.length} student{sectionStudents.length === 1 ? "" : "s"} match. Set a
+          student&apos;s section in the 1-by-1 Student Editor.
+        </div>
+
       </div>
 
       {/* Kind + entry mode */}

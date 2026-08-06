@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import { notifyRole } from "@/lib/push";
 import { format } from "date-fns";
 import { useGcoins } from "@/hooks/useGcoins";
+import { EscapeRoom } from "@/components/EscapeRoom";
+import { DEFAULT_ESCAPE_CONFIG, type EscapeConfig } from "@/lib/escape-room";
 
 export const Route = createFileRoute("/_app/activities/$id")({
   component: ActivityDetail,
@@ -19,6 +21,8 @@ interface Activity {
   title: string;
   description: string;
   due_at: string | null;
+  format?: string | null;
+  escape_config?: EscapeConfig | null;
 }
 
 interface Submission {
@@ -43,7 +47,7 @@ function ActivityDetail() {
     if (!user) return;
     (async () => {
       const [{ data: a }, { data: s }] = await Promise.all([
-        supabase.from("activities").select("id, title, description, due_at").eq("id", id).maybeSingle(),
+        supabase.from("activities").select("id, title, description, due_at, format, escape_config").eq("id", id).maybeSingle(),
         supabase.from("activity_submissions").select("id, note, attachments, created_at").eq("activity_id", id).eq("user_id", user.id).maybeSingle(),
       ]);
       setActivity(a as Activity | null);
@@ -54,6 +58,7 @@ function ActivityDetail() {
       }
     })();
   }, [id, user]);
+
 
   async function handleFiles(files: FileList | null) {
     if (!files || !user) return;
@@ -120,6 +125,26 @@ function ActivityDetail() {
 
       <p className="text-sm text-muted-foreground whitespace-pre-wrap mb-4">{activity.description || "No description"}</p>
 
+      {activity.format === "escape" && user ? (
+        <EscapeRoom
+          activityId={activity.id}
+          userId={user.id}
+          config={activity.escape_config ?? DEFAULT_ESCAPE_CONFIG}
+          onFinished={(score) => {
+            notifyRole(
+              "admin",
+              "Escape room completed",
+              `${profile?.full_name ?? "A student"} escaped ${activity.title} — ${score}/30`,
+              "/admin/activities",
+            );
+            void earn("complete_activity", `complete_activity:${activity.id}`);
+            toast.success(`You escaped! ${score}/30`);
+          }}
+        />
+      ) : (
+        <>
+
+
       {sub && (
         <div className="mb-3 text-xs text-emerald-600 font-semibold">
           Submitted {format(new Date(sub.created_at), "PPp")} — you can update below.
@@ -170,6 +195,9 @@ function ActivityDetail() {
       >
         <Send className="h-4 w-4" /> {busy ? "Submitting…" : sub ? "Update submission" : "Submit"}
       </button>
+        </>
+      )}
     </div>
+
   );
 }

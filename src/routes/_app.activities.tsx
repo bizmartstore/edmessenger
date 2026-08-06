@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useUnreadBadges } from "@/hooks/useUnreadBadges";
 import { useLiveReload } from "@/hooks/useLiveReload";
-import { FolderKanban, ChevronRight, CheckCircle2 } from "lucide-react";
+import { FolderKanban, ChevronRight, CheckCircle2, KeyRound } from "lucide-react";
 import { format } from "date-fns";
 import { SubjectEmptyState } from "@/components/SubjectEmptyState";
 
@@ -18,7 +18,9 @@ interface Activity {
   description: string;
   due_at: string | null;
   created_at: string;
+  format?: string | null;
 }
+
 
 function ActivitiesPage() {
   const { user, profile } = useAuth();
@@ -39,7 +41,7 @@ function ActivitiesPage() {
       return;
     }
     const [{ data }, { data: subs }] = await Promise.all([
-      supabase.from("activities").select("id, title, description, due_at, created_at").eq("subject_id", subjectId).order("created_at", { ascending: false }).limit(50),
+      supabase.from("activities").select("id, title, description, due_at, created_at, format").eq("subject_id", subjectId).order("created_at", { ascending: false }).limit(50),
       supabase.from("activity_submissions").select("activity_id").eq("user_id", user.id),
     ]);
     setItems((data ?? []) as Activity[]);
@@ -85,8 +87,14 @@ function ActivitiesPage() {
               <div className="min-w-0 flex-1">
                 <div className="font-semibold text-sm flex items-center gap-2">
                   {a.title}
+                  {a.format === "escape" && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary shrink-0">
+                      <KeyRound className="h-3 w-3" /> Escape room
+                    </span>
+                  )}
                   {done && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />}
                 </div>
+
                 <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{a.description || "No description"}</div>
                 {a.due_at && (
                   <div className="text-[10px] text-muted-foreground mt-1">Due {format(new Date(a.due_at), "MMM d, yyyy")}</div>
