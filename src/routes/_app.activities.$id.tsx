@@ -195,6 +195,9 @@ function ActivityDetail() {
       >
         <Send className="h-4 w-4" /> {busy ? "Submitting…" : sub ? "Update submission" : "Submit"}
       </button>
+        </>
+      )}
     </div>
+
   );
 }
