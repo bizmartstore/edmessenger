@@ -87,8 +87,14 @@ function ActivitiesPage() {
               <div className="min-w-0 flex-1">
                 <div className="font-semibold text-sm flex items-center gap-2">
                   {a.title}
+                  {a.format === "escape" && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary shrink-0">
+                      <KeyRound className="h-3 w-3" /> Escape room
+                    </span>
+                  )}
                   {done && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />}
                 </div>
+
                 <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{a.description || "No description"}</div>
                 {a.due_at && (
                   <div className="text-[10px] text-muted-foreground mt-1">Due {format(new Date(a.due_at), "MMM d, yyyy")}</div>
