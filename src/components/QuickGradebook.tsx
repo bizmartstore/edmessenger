@@ -246,7 +246,7 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
     try {
       const { error } = await supabase.from("academic_assessments").insert({
         kind,
-        section: section === UNASSIGNED ? null : section,
+        section: !section || section === UNASSIGNED ? null : section,
         title,
         max_score: max,
       });
