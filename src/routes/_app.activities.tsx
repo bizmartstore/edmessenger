@@ -18,7 +18,9 @@ interface Activity {
   description: string;
   due_at: string | null;
   created_at: string;
+  format?: string | null;
 }
+
 
 function ActivitiesPage() {
   const { user, profile } = useAuth();
