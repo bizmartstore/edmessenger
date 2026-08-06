@@ -125,6 +125,26 @@ function ActivityDetail() {
 
       <p className="text-sm text-muted-foreground whitespace-pre-wrap mb-4">{activity.description || "No description"}</p>
 
+      {activity.format === "escape" && user ? (
+        <EscapeRoom
+          activityId={activity.id}
+          userId={user.id}
+          config={activity.escape_config ?? DEFAULT_ESCAPE_CONFIG}
+          onFinished={(score) => {
+            notifyRole(
+              "admin",
+              "Escape room completed",
+              `${profile?.full_name ?? "A student"} escaped ${activity.title} — ${score}/30`,
+              "/admin/activities",
+            );
+            void earn("complete_activity", `complete_activity:${activity.id}`);
+            toast.success(`You escaped! ${score}/30`);
+          }}
+        />
+      ) : (
+        <>
+
+
       {sub && (
         <div className="mb-3 text-xs text-emerald-600 font-semibold">
           Submitted {format(new Date(sub.created_at), "PPp")} — you can update below.
