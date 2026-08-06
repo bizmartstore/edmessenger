@@ -148,8 +148,8 @@ export function QuickGradebook({ students }: { students: GradebookStudent[] }) {
   const activeAssessment = assessments.find((a) => a.id === activeAssessmentId) ?? null;
 
   const loadAssessments = useCallback(async () => {
-    if (!section) return;
-    const sectionValue = section === UNASSIGNED ? null : section;
+    const sectionValue = !section || section === UNASSIGNED ? null : section;
+
     let q = supabase
       .from("academic_assessments")
       .select("id, kind, section, title, max_score")
