@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import { notifyRole } from "@/lib/push";
 import { format } from "date-fns";
 import { useGcoins } from "@/hooks/useGcoins";
+import { EscapeRoom } from "@/components/EscapeRoom";
+import { DEFAULT_ESCAPE_CONFIG, type EscapeConfig } from "@/lib/escape-room";
 
 export const Route = createFileRoute("/_app/activities/$id")({
   component: ActivityDetail,
@@ -19,6 +21,8 @@ interface Activity {
   title: string;
   description: string;
   due_at: string | null;
+  format?: string | null;
+  escape_config?: EscapeConfig | null;
 }
 
 interface Submission {
@@ -43,7 +47,7 @@ function ActivityDetail() {
     if (!user) return;
     (async () => {
       const [{ data: a }, { data: s }] = await Promise.all([
-        supabase.from("activities").select("id, title, description, due_at").eq("id", id).maybeSingle(),
+        supabase.from("activities").select("id, title, description, due_at, format, escape_config").eq("id", id).maybeSingle(),
         supabase.from("activity_submissions").select("id, note, attachments, created_at").eq("activity_id", id).eq("user_id", user.id).maybeSingle(),
       ]);
       setActivity(a as Activity | null);
@@ -54,6 +58,7 @@ function ActivityDetail() {
       }
     })();
   }, [id, user]);
+
 
   async function handleFiles(files: FileList | null) {
     if (!files || !user) return;
