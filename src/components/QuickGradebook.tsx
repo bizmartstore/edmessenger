@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { getInitials, getProfileDisplayName, splitStoredName } from "@/lib/profile-name";
 import { parseScore } from "@/lib/academic";
+import { listSubjects, type Subject } from "@/lib/subjects";
 
 export type GradebookStudent = {
   id: string;
@@ -13,7 +14,9 @@ export type GradebookStudent = {
   middle_name: string | null;
   email: string | null;
   section?: string | null;
+  selected_subject_id?: string | null;
 };
+
 
 type Kind = "quiz" | "performance" | "summative";
 
