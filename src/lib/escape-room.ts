@@ -1,19 +1,38 @@
 import escapeLibrary from "@/assets/escape-library.jpg";
 import escapeLab from "@/assets/escape-lab.jpg";
 import escapeVault from "@/assets/escape-vault.jpg";
+import escapeObservatory from "@/assets/escape-observatory.jpg";
+import escapeSpaceship from "@/assets/escape-spaceship.jpg";
+import escapePyramid from "@/assets/escape-pyramid.jpg";
+import escapeAquarium from "@/assets/escape-aquarium.jpg";
 
 export const ESCAPE_MAX_SCORE = 30;
 
-export type EscapeScene = "library" | "lab" | "vault";
+export type EscapeScene =
+  | "library"
+  | "lab"
+  | "vault"
+  | "observatory"
+  | "spaceship"
+  | "pyramid"
+  | "aquarium";
 
 export const ESCAPE_SCENES: { key: EscapeScene; label: string; image: string }[] = [
   { key: "library", label: "Ancient Library", image: escapeLibrary },
   { key: "lab", label: "Science Lab", image: escapeLab },
   { key: "vault", label: "Temple Vault", image: escapeVault },
+  { key: "observatory", label: "Star Observatory", image: escapeObservatory },
+  { key: "spaceship", label: "Starship Deck", image: escapeSpaceship },
+  { key: "pyramid", label: "Pyramid Tomb", image: escapePyramid },
+  { key: "aquarium", label: "Deep-Sea Station", image: escapeAquarium },
 ];
 
 export function sceneImage(scene?: string | null) {
   return (ESCAPE_SCENES.find((s) => s.key === scene) ?? ESCAPE_SCENES[0]!).image;
+}
+
+export function sceneLabel(scene?: string | null) {
+  return (ESCAPE_SCENES.find((s) => s.key === scene) ?? ESCAPE_SCENES[0]!).label;
 }
 
 export interface EscapePuzzle {
@@ -63,27 +82,39 @@ export function isCorrect(given: string, expected: string) {
     .some((e) => e === g);
 }
 
+/** First accepted answer, used by the reveal-letters powerup. */
+export function primaryAnswer(expected: string) {
+  return (expected.split("|")[0] ?? "").trim();
+}
+
 export interface EscapeScoreInput {
   seconds: number;
   parSeconds: number;
   hintsUsed: number;
   wrongAnswers: number;
+  /** Locks opened with a skeleton key (−3 each) */
+  keysUsed?: number;
+  /** Bonus points from powerups (lucky charm) */
+  bonus?: number;
 }
 
 /**
  * 30 points when finished within par time, decaying with extra time.
- * −2 per hint, −0.5 per wrong answer. Never below 5 for a finished room.
+ * −2 per hint, −0.5 per wrong answer, −3 per skeleton key, + powerup bonus.
+ * Never below 5 for a finished room, never above 30.
  */
 export function scoreEscapeRun({
   seconds,
   parSeconds,
   hintsUsed,
   wrongAnswers,
+  keysUsed = 0,
+  bonus = 0,
 }: EscapeScoreInput): number {
   const par = Math.max(30, parSeconds || 600);
   const timeScore =
     seconds <= par ? ESCAPE_MAX_SCORE : Math.max(12, (ESCAPE_MAX_SCORE * par) / seconds);
-  const raw = timeScore - hintsUsed * 2 - wrongAnswers * 0.5;
+  const raw = timeScore - hintsUsed * 2 - wrongAnswers * 0.5 - keysUsed * 3 + bonus;
   return Math.max(5, Math.min(ESCAPE_MAX_SCORE, Math.round(raw * 2) / 2));
 }
 
