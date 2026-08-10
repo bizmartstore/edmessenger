@@ -34,10 +34,10 @@ import { Route as AppFeedbackRouteImport } from './routes/_app.feedback'
 import { Route as AppChatRouteImport } from './routes/_app.chat'
 import { Route as AppAttendanceRouteImport } from './routes/_app.attendance'
 import { Route as AppActivitiesRouteImport } from './routes/_app.activities'
-import { Route as AppQuizzesIdRouteImport } from './routes/_app.quizzes.$id'
+import { Route as AppQuizzesIdRouteImport } from './routes/_app.quizzes_.$id'
 import { Route as AppGroupGroupIdRouteImport } from './routes/_app.group.$groupId'
 import { Route as AppDmPeerIdRouteImport } from './routes/_app.dm.$peerId'
-import { Route as AppActivitiesIdRouteImport } from './routes/_app.activities.$id'
+import { Route as AppActivitiesIdRouteImport } from './routes/_app.activities_.$id'
 import { Route as AppLessonsReviewersIdRouteImport } from './routes/_app.lessons_.reviewers.$id'
 
 const AuthRoute = AuthRouteImport.update({
@@ -165,9 +165,9 @@ const AppActivitiesRoute = AppActivitiesRouteImport.update({
   getParentRoute: () => AppRoute,
 } as any)
 const AppQuizzesIdRoute = AppQuizzesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AppQuizzesRoute,
+  id: '/quizzes_/$id',
+  path: '/quizzes/$id',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppGroupGroupIdRoute = AppGroupGroupIdRouteImport.update({
   id: '/group/$groupId',
@@ -180,9 +180,9 @@ const AppDmPeerIdRoute = AppDmPeerIdRouteImport.update({
   getParentRoute: () => AppRoute,
 } as any)
 const AppActivitiesIdRoute = AppActivitiesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AppActivitiesRoute,
+  id: '/activities_/$id',
+  path: '/activities/$id',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppLessonsReviewersIdRoute = AppLessonsReviewersIdRouteImport.update({
   id: '/lessons_/reviewers/$id',
@@ -194,7 +194,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRoute
-  '/activities': typeof AppActivitiesRouteWithChildren
+  '/activities': typeof AppActivitiesRoute
   '/attendance': typeof AppAttendanceRoute
   '/chat': typeof AppChatRoute
   '/feedback': typeof AppFeedbackRoute
@@ -202,7 +202,7 @@ export interface FileRoutesByFullPath {
   '/lessons': typeof AppLessonsRoute
   '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
-  '/quizzes': typeof AppQuizzesRouteWithChildren
+  '/quizzes': typeof AppQuizzesRoute
   '/admin/activities': typeof AdminActivitiesRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
   '/admin/attendance': typeof AdminAttendanceRoute
@@ -223,7 +223,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
-  '/activities': typeof AppActivitiesRouteWithChildren
+  '/activities': typeof AppActivitiesRoute
   '/attendance': typeof AppAttendanceRoute
   '/chat': typeof AppChatRoute
   '/feedback': typeof AppFeedbackRoute
@@ -231,7 +231,7 @@ export interface FileRoutesByTo {
   '/lessons': typeof AppLessonsRoute
   '/notifications': typeof AppNotificationsRoute
   '/profile': typeof AppProfileRoute
-  '/quizzes': typeof AppQuizzesRouteWithChildren
+  '/quizzes': typeof AppQuizzesRoute
   '/admin/activities': typeof AdminActivitiesRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
   '/admin/attendance': typeof AdminAttendanceRoute
@@ -256,7 +256,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRoute
-  '/_app/activities': typeof AppActivitiesRouteWithChildren
+  '/_app/activities': typeof AppActivitiesRoute
   '/_app/attendance': typeof AppAttendanceRoute
   '/_app/chat': typeof AppChatRoute
   '/_app/feedback': typeof AppFeedbackRoute
@@ -264,7 +264,7 @@ export interface FileRoutesById {
   '/_app/lessons': typeof AppLessonsRoute
   '/_app/notifications': typeof AppNotificationsRoute
   '/_app/profile': typeof AppProfileRoute
-  '/_app/quizzes': typeof AppQuizzesRouteWithChildren
+  '/_app/quizzes': typeof AppQuizzesRoute
   '/admin/activities': typeof AdminActivitiesRoute
   '/admin/announcements': typeof AdminAnnouncementsRoute
   '/admin/attendance': typeof AdminAttendanceRoute
@@ -278,10 +278,10 @@ export interface FileRoutesById {
   '/admin/subjects': typeof AdminSubjectsRoute
   '/_app/': typeof AppIndexRoute
   '/admin/': typeof AdminIndexRoute
-  '/_app/activities/$id': typeof AppActivitiesIdRoute
+  '/_app/activities_/$id': typeof AppActivitiesIdRoute
   '/_app/dm/$peerId': typeof AppDmPeerIdRoute
   '/_app/group/$groupId': typeof AppGroupGroupIdRoute
-  '/_app/quizzes/$id': typeof AppQuizzesIdRoute
+  '/_app/quizzes_/$id': typeof AppQuizzesIdRoute
   '/_app/lessons_/reviewers/$id': typeof AppLessonsReviewersIdRoute
 }
 export interface FileRouteTypes {
@@ -373,10 +373,10 @@ export interface FileRouteTypes {
     | '/admin/subjects'
     | '/_app/'
     | '/admin/'
-    | '/_app/activities/$id'
+    | '/_app/activities_/$id'
     | '/_app/dm/$peerId'
     | '/_app/group/$groupId'
-    | '/_app/quizzes/$id'
+    | '/_app/quizzes_/$id'
     | '/_app/lessons_/reviewers/$id'
   fileRoutesById: FileRoutesById
 }
@@ -563,12 +563,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppActivitiesRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/quizzes/$id': {
-      id: '/_app/quizzes/$id'
-      path: '/$id'
+    '/_app/quizzes_/$id': {
+      id: '/_app/quizzes_/$id'
+      path: '/quizzes/$id'
       fullPath: '/quizzes/$id'
       preLoaderRoute: typeof AppQuizzesIdRouteImport
-      parentRoute: typeof AppQuizzesRoute
+      parentRoute: typeof AppRoute
     }
     '/_app/group/$groupId': {
       id: '/_app/group/$groupId'
@@ -584,12 +584,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDmPeerIdRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/activities/$id': {
-      id: '/_app/activities/$id'
-      path: '/$id'
+    '/_app/activities_/$id': {
+      id: '/_app/activities_/$id'
+      path: '/activities/$id'
       fullPath: '/activities/$id'
       preLoaderRoute: typeof AppActivitiesIdRouteImport
-      parentRoute: typeof AppActivitiesRoute
+      parentRoute: typeof AppRoute
     }
     '/_app/lessons_/reviewers/$id': {
       id: '/_app/lessons_/reviewers/$id'
@@ -601,32 +601,8 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AppActivitiesRouteChildren {
-  AppActivitiesIdRoute: typeof AppActivitiesIdRoute
-}
-
-const AppActivitiesRouteChildren: AppActivitiesRouteChildren = {
-  AppActivitiesIdRoute: AppActivitiesIdRoute,
-}
-
-const AppActivitiesRouteWithChildren = AppActivitiesRoute._addFileChildren(
-  AppActivitiesRouteChildren,
-)
-
-interface AppQuizzesRouteChildren {
-  AppQuizzesIdRoute: typeof AppQuizzesIdRoute
-}
-
-const AppQuizzesRouteChildren: AppQuizzesRouteChildren = {
-  AppQuizzesIdRoute: AppQuizzesIdRoute,
-}
-
-const AppQuizzesRouteWithChildren = AppQuizzesRoute._addFileChildren(
-  AppQuizzesRouteChildren,
-)
-
 interface AppRouteChildren {
-  AppActivitiesRoute: typeof AppActivitiesRouteWithChildren
+  AppActivitiesRoute: typeof AppActivitiesRoute
   AppAttendanceRoute: typeof AppAttendanceRoute
   AppChatRoute: typeof AppChatRoute
   AppFeedbackRoute: typeof AppFeedbackRoute
@@ -634,15 +610,17 @@ interface AppRouteChildren {
   AppLessonsRoute: typeof AppLessonsRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
   AppProfileRoute: typeof AppProfileRoute
-  AppQuizzesRoute: typeof AppQuizzesRouteWithChildren
+  AppQuizzesRoute: typeof AppQuizzesRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppActivitiesIdRoute: typeof AppActivitiesIdRoute
   AppDmPeerIdRoute: typeof AppDmPeerIdRoute
   AppGroupGroupIdRoute: typeof AppGroupGroupIdRoute
+  AppQuizzesIdRoute: typeof AppQuizzesIdRoute
   AppLessonsReviewersIdRoute: typeof AppLessonsReviewersIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
-  AppActivitiesRoute: AppActivitiesRouteWithChildren,
+  AppActivitiesRoute: AppActivitiesRoute,
   AppAttendanceRoute: AppAttendanceRoute,
   AppChatRoute: AppChatRoute,
   AppFeedbackRoute: AppFeedbackRoute,
@@ -650,10 +628,12 @@ const AppRouteChildren: AppRouteChildren = {
   AppLessonsRoute: AppLessonsRoute,
   AppNotificationsRoute: AppNotificationsRoute,
   AppProfileRoute: AppProfileRoute,
-  AppQuizzesRoute: AppQuizzesRouteWithChildren,
+  AppQuizzesRoute: AppQuizzesRoute,
   AppIndexRoute: AppIndexRoute,
+  AppActivitiesIdRoute: AppActivitiesIdRoute,
   AppDmPeerIdRoute: AppDmPeerIdRoute,
   AppGroupGroupIdRoute: AppGroupGroupIdRoute,
+  AppQuizzesIdRoute: AppQuizzesIdRoute,
   AppLessonsReviewersIdRoute: AppLessonsReviewersIdRoute,
 }
 
@@ -699,13 +679,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
