@@ -6,7 +6,7 @@ import { ArrowLeft, CheckCircle2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { notifyRole } from "@/lib/push";
 
-export const Route = createFileRoute("/_app/quizzes/$id")({
+export const Route = createFileRoute("/_app/quizzes_/$id")({
   component: TakeQuiz,
 });
 

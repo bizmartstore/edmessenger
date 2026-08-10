@@ -12,7 +12,7 @@ import { useGcoins } from "@/hooks/useGcoins";
 import { EscapeRoom } from "@/components/EscapeRoom";
 import { DEFAULT_ESCAPE_CONFIG, type EscapeConfig } from "@/lib/escape-room";
 
-export const Route = createFileRoute("/_app/activities/$id")({
+export const Route = createFileRoute("/_app/activities_/$id")({
   component: ActivityDetail,
 });
 
