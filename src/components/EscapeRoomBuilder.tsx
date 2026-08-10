@@ -1,10 +1,16 @@
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Sparkles, Trash2 } from "lucide-react";
 import {
   ESCAPE_SCENES,
   type EscapeConfig,
   type EscapePuzzle,
   type EscapeScene,
 } from "@/lib/escape-room";
+import {
+  DIFFICULTY_META,
+  ESCAPE_TEMPLATES,
+  templateToConfig,
+} from "@/lib/escape-templates";
+
 
 function newPuzzle(): EscapePuzzle {
   return {
