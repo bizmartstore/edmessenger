@@ -49,8 +49,45 @@ export function EscapeRoomBuilder({
         Escape room setup
       </div>
 
+      <div className="space-y-2">
+        <div className="text-[11px] font-semibold text-muted-foreground">
+          Start from a template
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {ESCAPE_TEMPLATES.map((t) => {
+            const meta = DIFFICULTY_META[t.difficulty];
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => onChange(templateToConfig(t))}
+                className="text-left rounded-xl border border-border bg-card p-3 hover:border-primary transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
+                  <span className="text-xs font-bold truncate">{t.name}</span>
+                  <span
+                    className={`ml-auto rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${meta.className}`}
+                  >
+                    {meta.label}
+                  </span>
+                </div>
+                <div className="mt-1 text-[10px] text-muted-foreground">{t.tagline}</div>
+                <div className="mt-1 text-[10px] font-semibold text-muted-foreground">
+                  {t.puzzles.length} locks · {t.minutes} min target
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          Picking a template replaces the current setup — then edit any question, answer or hint.
+        </p>
+      </div>
+
       <textarea
         value={value.intro}
+
         onChange={(e) => update({ intro: e.target.value })}
         rows={2}
         placeholder="Intro story shown before students enter"
