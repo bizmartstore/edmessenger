@@ -469,6 +469,19 @@ function extractGeminiJson(text: string): unknown {
   return JSON.parse(candidate);
 }
 
+/** Prefer a top-level JSON object (for structured generators like Escape Room). */
+function extractGeminiJsonObject(text: string): unknown {
+  const trimmed = text.trim();
+  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fence ? fence[1].trim() : trimmed;
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    return JSON.parse(candidate.slice(start, end + 1));
+  }
+  return JSON.parse(candidate);
+}
+
 function normalizeGeneratedQuestions(raw: unknown, count: number): GeneratedQuestion[] {
   if (!Array.isArray(raw)) return [];
   const out: GeneratedQuestion[] = [];
@@ -847,6 +860,270 @@ Rules:
   }
 }
 
+type GenerateEscapeBody = {
+  topic?: string;
+  notes?: string;
+  template_id?: string;
+  template_name?: string;
+  puzzle_count?: number;
+  minutes?: number;
+  difficulty?: string;
+};
+
+type GeneratedEscapePuzzle = {
+  scene: string;
+  title: string;
+  story: string;
+  question: string;
+  answer: string;
+  hint: string;
+};
+
+const ESCAPE_SCENES_ALLOWED = [
+  "library",
+  "lab",
+  "vault",
+  "observatory",
+  "spaceship",
+  "pyramid",
+  "aquarium",
+] as const;
+
+function normalizeEscapeConfig(
+  raw: unknown,
+  puzzleCount: number,
+  minutes: number,
+): { intro: string; par_seconds: number; puzzles: GeneratedEscapePuzzle[] } {
+  const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const puzzlesRaw = Array.isArray(obj.puzzles) ? obj.puzzles : [];
+  const puzzles: GeneratedEscapePuzzle[] = [];
+
+  for (let i = 0; i < Math.max(puzzleCount, puzzlesRaw.length); i++) {
+    if (puzzles.length >= puzzleCount) break;
+    const item =
+      puzzlesRaw[i] && typeof puzzlesRaw[i] === "object"
+        ? (puzzlesRaw[i] as Record<string, unknown>)
+        : {};
+    const sceneRaw = String(item.scene ?? ESCAPE_SCENES_ALLOWED[i % ESCAPE_SCENES_ALLOWED.length])
+      .trim()
+      .toLowerCase();
+    const scene = (ESCAPE_SCENES_ALLOWED as readonly string[]).includes(sceneRaw)
+      ? sceneRaw
+      : ESCAPE_SCENES_ALLOWED[i % ESCAPE_SCENES_ALLOWED.length];
+    const question = String(item.question ?? "").trim();
+    const answer = String(item.answer ?? "").trim();
+    if (!question || !answer) continue;
+    puzzles.push({
+      scene,
+      title: String(item.title ?? `Lock ${i + 1}`).trim() || `Lock ${i + 1}`,
+      story: String(item.story ?? "").trim(),
+      question,
+      answer,
+      hint: String(item.hint ?? "").trim(),
+    });
+  }
+
+  const parFromPayload = Math.floor(Number(obj.par_seconds) || 0);
+  const par_seconds =
+    parFromPayload >= 60
+      ? Math.min(3600, parFromPayload)
+      : Math.max(60, Math.min(3600, Math.floor(minutes) * 60 || 600));
+
+  return {
+    intro:
+      String(obj.intro ?? "").trim() ||
+      "The door locked behind you. Solve every puzzle to escape before time runs out!",
+    par_seconds,
+    puzzles,
+  };
+}
+
+async function handleGenerateEscapeRoom(request: Request, envBag: EnvBag): Promise<Response> {
+  const origin = request.headers.get("origin");
+  const cors = corsHeaders(origin);
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: cors });
+  }
+  if (request.method !== "POST") {
+    return jsonResponse({ ok: false, error: "Method not allowed" }, 405, cors);
+  }
+
+  const auth = request.headers.get("authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!token || !(await verifyAdmin(token))) {
+    return jsonResponse({ ok: false, error: "Unauthorized" }, 401, cors);
+  }
+
+  const apiKey = envBag.GEMINI_API_KEY?.trim() || "";
+  if (!apiKey) {
+    return jsonResponse(
+      { ok: false, error: "GEMINI_API_KEY not configured on the server" },
+      503,
+      cors,
+    );
+  }
+
+  let payload: GenerateEscapeBody;
+  try {
+    payload = (await request.json()) as GenerateEscapeBody;
+  } catch {
+    return jsonResponse({ ok: false, error: "Invalid JSON" }, 400, cors);
+  }
+
+  const topic = typeof payload.topic === "string" ? payload.topic.trim() : "";
+  const notes = typeof payload.notes === "string" ? payload.notes.trim() : "";
+  const templateName =
+    typeof payload.template_name === "string" ? payload.template_name.trim() : "";
+  const difficulty = String(payload.difficulty ?? "mixed");
+  const puzzleCount = Math.max(3, Math.min(10, Math.floor(Number(payload.puzzle_count) || 5)));
+  const minutes = Math.max(5, Math.min(60, Math.floor(Number(payload.minutes) || 15)));
+  if (!topic && !notes) {
+    return jsonResponse({ ok: false, error: "topic or notes required" }, 400, cors);
+  }
+
+  const prompt = `You are an education assistant that builds COMPLETE classroom Escape Room activities for Filipino senior high / college learners.
+Create ${puzzleCount} sequential locks/puzzles for an escape room. Every puzzle MUST be tightly aligned to the teacher's topic (including subtopics A/B/C if provided).
+
+${templateName ? `Style inspiration (built-in template name): ${templateName}` : "Create an original educational escape premise."}
+Difficulty preference: ${difficulty}
+Target escape time: about ${minutes} minutes
+
+Topic / curriculum content:
+${topic || "(from notes)"}
+
+Extra teacher notes:
+${notes || "(none)"}
+
+Puzzle style mix (vary across locks — not only MCQ):
+- Knowledge check (short factual answer)
+- Scenario judgment (best interpersonal / values response as a short keyword or phrase)
+- Matching-style clue (student types the matched concept)
+- Ordering / sequence (student enters the correct sequence as a short answer)
+- Cipher / riddle / keyword unlock
+
+Rules:
+- scene must be one of: library, lab, vault, observatory, spaceship, pyramid, aquarium
+- answer may include alternatives separated by | (e.g. empathy|pakikipagkapwa)
+- Use Philippine context when relevant (home, school, community, pakikipagkapwa, Laro ng Lahi, etc.)
+- Age-appropriate and educational
+- intro: 2-4 sentences immersing students in the escape premise tied to the topic
+- par_seconds: ${minutes * 60}
+- Return ONLY JSON object (no markdown):
+{
+  "intro":"...",
+  "par_seconds":${minutes * 60},
+  "puzzles":[
+    {
+      "scene":"library",
+      "title":"Lock 1 · ...",
+      "story":"scene/clue text",
+      "question":"what students must answer",
+      "answer":"correct|alt",
+      "hint":"helpful hint"
+    }
+  ]
+}
+Exactly ${puzzleCount} puzzles in the array.`;
+
+  const models = [
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+  ];
+
+  try {
+    let lastError = "Gemini request failed";
+    for (const model of models) {
+      const geminiUrl =
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(geminiUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.5,
+            responseMimeType: "application/json",
+          },
+        }),
+      });
+      const text = await res.text();
+      let parsed: unknown = text;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        // keep raw
+      }
+
+      if (!res.ok) {
+        const geminiErr =
+          typeof parsed === "object" && parsed && "error" in (parsed as object)
+            ? (parsed as { error?: { code?: number; message?: string } }).error
+            : undefined;
+        const msg = geminiErr?.message || `Gemini HTTP ${res.status}`;
+        lastError = msg;
+        if (geminiErr?.code === 401 || geminiErr?.code === 403) {
+          return jsonResponse({ ok: false, error: friendlyGeminiError(msg) }, 502, cors);
+        }
+        if (
+          res.status === 404 ||
+          res.status === 429 ||
+          /quota|RESOURCE_EXHAUSTED|not found|NOT_FOUND|no longer available|not supported|deprecated/i.test(
+            msg,
+          )
+        ) {
+          continue;
+        }
+        return jsonResponse({ ok: false, error: friendlyGeminiError(msg) }, 502, cors);
+      }
+
+      const candidates =
+        typeof parsed === "object" && parsed && "candidates" in (parsed as object)
+          ? (parsed as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> })
+              .candidates
+          : undefined;
+      const rawText = candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("\n") ?? "";
+      if (!rawText.trim()) {
+        lastError = `Gemini (${model}) returned empty content`;
+        continue;
+      }
+
+      let extracted: unknown;
+      try {
+        extracted = extractGeminiJsonObject(rawText);
+      } catch {
+        lastError = `Could not parse Gemini (${model}) JSON`;
+        continue;
+      }
+
+      const room = normalizeEscapeConfig(extracted, puzzleCount, minutes);
+      if (room.puzzles.length < 3) {
+        lastError = `Could not normalize Gemini (${model}) escape room (need ≥3 puzzles)`;
+        continue;
+      }
+      return jsonResponse(
+        {
+          ok: true,
+          intro: room.intro,
+          par_seconds: room.par_seconds,
+          puzzles: room.puzzles,
+          model,
+        },
+        200,
+        cors,
+      );
+    }
+
+    return jsonResponse({ ok: false, error: friendlyGeminiError(lastError) }, 502, cors);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Gemini failed";
+    console.error("generate escape room failed", err);
+    return jsonResponse({ ok: false, error: friendlyGeminiError(message) }, 502, cors);
+  }
+}
+
 async function handleGotchiTowerWs(request: Request, envBag: EnvBag): Promise<Response> {
   const url = new URL(request.url);
   const eventId = url.searchParams.get("event")?.trim();
@@ -943,6 +1220,10 @@ export default {
 
       if (url.pathname === "/api/ai/generate-tower-questions") {
         return handleGenerateTowerQuestions(request, envBag);
+      }
+
+      if (url.pathname === "/api/ai/generate-escape-room") {
+        return handleGenerateEscapeRoom(request, envBag);
       }
 
       if (url.pathname === "/api/ai/gemini-health") {
