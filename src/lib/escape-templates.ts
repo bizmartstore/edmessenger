@@ -183,9 +183,9 @@ export const ESCAPE_TEMPLATES: EscapeTemplate[] = [
       p(
         "pyramid",
         "Seal 2 · The Weighing of Hearts",
-        "Four jars weigh 12, 7, 9 and 4 deben. Anubis takes the two jars whose difference equals the lightest jar.",
+        "Four jars weigh 12, 8, 9 and 4 deben. Anubis takes the two jars whose difference equals the lightest jar.",
         "Which two weights does he take? (write them separated by a space, larger first)",
-        "12 8|11 7|9 5|12 7 |13 9|12 7",
+        "12 8|128",
         "Look for a pair differing by 4.",
       ),
       p(
