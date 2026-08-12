@@ -1,15 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Trash2, ChevronDown, ChevronUp, Eye, EyeOff } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronUp, Eye, EyeOff, Sparkles, Timer } from "lucide-react";
 import { toast } from "sonner";
 import { AdminSubjectSelect } from "@/components/AdminSubjectSelect";
+import { generateReviewerQuestions } from "@/lib/reviewer-ai";
 
 export const Route = createFileRoute("/admin/quizzes")({
   component: AdminQuizzes,
 });
 
-interface Quiz { id: string; title: string; description: string | null; published: boolean }
+interface Quiz { id: string; title: string; description: string | null; published: boolean; time_limit_seconds?: number | null }
 interface Q { id: string; quiz_id: string; question: string; options: string[]; correct_index: number; order_index: number }
 
 function AdminQuizzes() {
@@ -18,6 +19,10 @@ function AdminQuizzes() {
   const [questions, setQuestions] = useState<Record<string, Q[]>>({});
   const [newTitle, setNewTitle] = useState(""); const [newDesc, setNewDesc] = useState("");
   const [newSubjectId, setNewSubjectId] = useState("");
+  const [newMinutes, setNewMinutes] = useState(0);
+  const [aiNotes, setAiNotes] = useState("");
+  const [aiCount, setAiCount] = useState(5);
+  const [generating, setGenerating] = useState(false);
 
   async function load() {
     const { data } = await supabase.from("quizzes").select("*").order("created_at", { ascending: false });
@@ -37,11 +42,73 @@ function AdminQuizzes() {
       toast.error("Select a subject");
       return;
     }
-    const { error } = await supabase.from("quizzes").insert({ title: newTitle, description: newDesc || null, subject_id: newSubjectId });
+    const { error } = await supabase.from("quizzes").insert({
+      title: newTitle,
+      description: newDesc || null,
+      subject_id: newSubjectId,
+      time_limit_seconds: Math.max(0, Math.round(newMinutes * 60)),
+    });
     if (error) return toast.error(error.message);
-    setNewTitle(""); setNewDesc(""); setNewSubjectId(""); load();
+    setNewTitle(""); setNewDesc(""); setNewSubjectId(""); setNewMinutes(0); load();
     toast.success("Quiz created");
   }
+
+  async function generateQuiz() {
+    if (!newTitle.trim() && !aiNotes.trim()) {
+      toast.error("Add a title/topic or ideas for AI to use");
+      return;
+    }
+    if (!newSubjectId) {
+      toast.error("Select a subject");
+      return;
+    }
+    setGenerating(true);
+    try {
+      const qs = await generateReviewerQuestions({
+        topic: newTitle.trim() || "Class quiz",
+        notes: aiNotes.trim(),
+        count: aiCount,
+      });
+      if (!qs.length) throw new Error("AI returned no questions");
+      const { data: quiz, error } = await supabase
+        .from("quizzes")
+        .insert({
+          title: newTitle.trim() || `Quiz: ${aiNotes.trim().slice(0, 40)}`,
+          description: newDesc || null,
+          subject_id: newSubjectId,
+          time_limit_seconds: Math.max(0, Math.round(newMinutes * 60)),
+        })
+        .select("id")
+        .single();
+      if (error || !quiz) throw new Error(error?.message ?? "Could not create quiz");
+      const rows = qs.map((q, i) => ({
+        quiz_id: quiz.id,
+        question: q.question,
+        options: q.options,
+        correct_index: q.correct_index,
+        order_index: i,
+      }));
+      const { error: qErr } = await supabase.from("quiz_questions").insert(rows);
+      if (qErr) throw new Error(qErr.message);
+      setNewTitle(""); setNewDesc(""); setAiNotes(""); setNewSubjectId(""); setNewMinutes(0);
+      await load();
+      setExpanded(quiz.id);
+      loadQs(quiz.id);
+      toast.success(`Generated ${rows.length} questions`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "AI generate failed");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function updateTimer(q: Quiz, minutes: number) {
+    const secs = Math.max(0, Math.round(minutes * 60));
+    setQuizzes((p) => p.map((x) => x.id === q.id ? { ...x, time_limit_seconds: secs } : x));
+    const { error } = await supabase.from("quizzes").update({ time_limit_seconds: secs }).eq("id", q.id);
+    if (error) toast.error(error.message);
+  }
+
 
   async function togglePublish(q: Quiz) {
     const next = !q.published;
