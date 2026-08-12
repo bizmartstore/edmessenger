@@ -1,15 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Plus, Trash2, ChevronDown, ChevronUp, Eye, EyeOff } from "lucide-react";
+import { Plus, Trash2, ChevronDown, ChevronUp, Eye, EyeOff, Sparkles, Timer } from "lucide-react";
 import { toast } from "sonner";
 import { AdminSubjectSelect } from "@/components/AdminSubjectSelect";
+import { generateReviewerQuestions } from "@/lib/reviewer-ai";
 
 export const Route = createFileRoute("/admin/quizzes")({
   component: AdminQuizzes,
 });
 
-interface Quiz { id: string; title: string; description: string | null; published: boolean }
+interface Quiz { id: string; title: string; description: string | null; published: boolean; time_limit_seconds?: number | null }
 interface Q { id: string; quiz_id: string; question: string; options: string[]; correct_index: number; order_index: number }
 
 function AdminQuizzes() {
@@ -18,6 +19,10 @@ function AdminQuizzes() {
   const [questions, setQuestions] = useState<Record<string, Q[]>>({});
   const [newTitle, setNewTitle] = useState(""); const [newDesc, setNewDesc] = useState("");
   const [newSubjectId, setNewSubjectId] = useState("");
+  const [newMinutes, setNewMinutes] = useState(0);
+  const [aiNotes, setAiNotes] = useState("");
+  const [aiCount, setAiCount] = useState(5);
+  const [generating, setGenerating] = useState(false);
 
   async function load() {
     const { data } = await supabase.from("quizzes").select("*").order("created_at", { ascending: false });
@@ -37,11 +42,73 @@ function AdminQuizzes() {
       toast.error("Select a subject");
       return;
     }
-    const { error } = await supabase.from("quizzes").insert({ title: newTitle, description: newDesc || null, subject_id: newSubjectId });
+    const { error } = await supabase.from("quizzes").insert({
+      title: newTitle,
+      description: newDesc || null,
+      subject_id: newSubjectId,
+      time_limit_seconds: Math.max(0, Math.round(newMinutes * 60)),
+    });
     if (error) return toast.error(error.message);
-    setNewTitle(""); setNewDesc(""); setNewSubjectId(""); load();
+    setNewTitle(""); setNewDesc(""); setNewSubjectId(""); setNewMinutes(0); load();
     toast.success("Quiz created");
   }
+
+  async function generateQuiz() {
+    if (!newTitle.trim() && !aiNotes.trim()) {
+      toast.error("Add a title/topic or ideas for AI to use");
+      return;
+    }
+    if (!newSubjectId) {
+      toast.error("Select a subject");
+      return;
+    }
+    setGenerating(true);
+    try {
+      const qs = await generateReviewerQuestions({
+        topic: newTitle.trim() || "Class quiz",
+        notes: aiNotes.trim(),
+        count: aiCount,
+      });
+      if (!qs.length) throw new Error("AI returned no questions");
+      const { data: quiz, error } = await supabase
+        .from("quizzes")
+        .insert({
+          title: newTitle.trim() || `Quiz: ${aiNotes.trim().slice(0, 40)}`,
+          description: newDesc || null,
+          subject_id: newSubjectId,
+          time_limit_seconds: Math.max(0, Math.round(newMinutes * 60)),
+        })
+        .select("id")
+        .single();
+      if (error || !quiz) throw new Error(error?.message ?? "Could not create quiz");
+      const rows = qs.map((q, i) => ({
+        quiz_id: quiz.id,
+        question: q.question,
+        options: q.options,
+        correct_index: q.correct_index,
+        order_index: i,
+      }));
+      const { error: qErr } = await supabase.from("quiz_questions").insert(rows);
+      if (qErr) throw new Error(qErr.message);
+      setNewTitle(""); setNewDesc(""); setAiNotes(""); setNewSubjectId(""); setNewMinutes(0);
+      await load();
+      setExpanded(quiz.id);
+      loadQs(quiz.id);
+      toast.success(`Generated ${rows.length} questions`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "AI generate failed");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function updateTimer(q: Quiz, minutes: number) {
+    const secs = Math.max(0, Math.round(minutes * 60));
+    setQuizzes((p) => p.map((x) => x.id === q.id ? { ...x, time_limit_seconds: secs } : x));
+    const { error } = await supabase.from("quizzes").update({ time_limit_seconds: secs }).eq("id", q.id);
+    if (error) toast.error(error.message);
+  }
+
 
   async function togglePublish(q: Quiz) {
     const next = !q.published;
@@ -85,13 +152,49 @@ function AdminQuizzes() {
     <div>
       <form onSubmit={createQuiz} className="rounded-2xl p-4 bg-card border border-border shadow-card space-y-2">
         <div className="font-semibold text-sm">New quiz</div>
-        <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Title" className="w-full px-3 py-2 rounded-xl bg-muted border border-border outline-none text-sm" />
+        <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Title / topic" className="w-full px-3 py-2 rounded-xl bg-muted border border-border outline-none text-sm" />
         <input value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Description (optional)" className="w-full px-3 py-2 rounded-xl bg-muted border border-border outline-none text-sm" />
         <AdminSubjectSelect value={newSubjectId} onChange={setNewSubjectId} required />
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Timer className="h-3.5 w-3.5" /> Time limit (minutes, 0 = no timer)
+          <input
+            type="number" min={0} max={180} value={newMinutes}
+            onChange={(e) => setNewMinutes(Number(e.target.value) || 0)}
+            className="w-20 ml-auto px-2 py-1.5 rounded-lg bg-muted border border-border outline-none text-sm text-foreground"
+          />
+        </label>
         <button className="w-full py-2.5 rounded-xl gradient-primary text-primary-foreground text-sm font-semibold flex items-center justify-center gap-1.5">
           <Plus className="h-4 w-4" /> Create quiz
         </button>
+
+        <div className="pt-2 mt-1 border-t border-border space-y-2">
+          <div className="text-xs font-semibold flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5 text-primary" /> Instant AI quiz</div>
+          <textarea
+            value={aiNotes}
+            onChange={(e) => setAiNotes(e.target.value)}
+            placeholder="Ideas, topics or lesson notes the quiz should be based on…"
+            rows={3}
+            className="w-full px-3 py-2 rounded-xl bg-muted border border-border outline-none text-sm resize-none"
+          />
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            Questions
+            <input
+              type="number" min={1} max={20} value={aiCount}
+              onChange={(e) => setAiCount(Math.max(1, Math.min(20, Number(e.target.value) || 5)))}
+              className="w-20 ml-auto px-2 py-1.5 rounded-lg bg-muted border border-border outline-none text-sm text-foreground"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={generateQuiz}
+            disabled={generating}
+            className="w-full py-2.5 rounded-xl bg-primary/10 text-primary text-sm font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50"
+          >
+            <Sparkles className="h-4 w-4" /> {generating ? "Generating…" : "Generate quiz with AI"}
+          </button>
+        </div>
       </form>
+
 
       <div className="mt-5 space-y-3">
         {quizzes.map((q) => {
@@ -119,6 +222,16 @@ function AdminQuizzes() {
               </div>
               {open && (
                 <div className="border-t border-border p-4 space-y-4 bg-muted/30">
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Timer className="h-3.5 w-3.5" /> Time limit (minutes, 0 = none)
+                    <input
+                      type="number" min={0} max={180}
+                      value={Math.round((q.time_limit_seconds ?? 0) / 60)}
+                      onChange={(e) => updateTimer(q, Number(e.target.value) || 0)}
+                      className="w-20 ml-auto px-2 py-1.5 rounded-lg bg-card border border-border outline-none text-sm text-foreground"
+                    />
+                  </label>
+
                   {qs.map((question) => (
                     <div key={question.id} className="rounded-xl p-3 bg-card border border-border">
                       <div className="flex items-start gap-2">
