@@ -222,6 +222,16 @@ function AdminQuizzes() {
               </div>
               {open && (
                 <div className="border-t border-border p-4 space-y-4 bg-muted/30">
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Timer className="h-3.5 w-3.5" /> Time limit (minutes, 0 = none)
+                    <input
+                      type="number" min={0} max={180}
+                      value={Math.round((q.time_limit_seconds ?? 0) / 60)}
+                      onChange={(e) => updateTimer(q, Number(e.target.value) || 0)}
+                      className="w-20 ml-auto px-2 py-1.5 rounded-lg bg-card border border-border outline-none text-sm text-foreground"
+                    />
+                  </label>
+
                   {qs.map((question) => (
                     <div key={question.id} className="rounded-xl p-3 bg-card border border-border">
                       <div className="flex items-start gap-2">
